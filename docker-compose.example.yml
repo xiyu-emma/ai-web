@@ -1,0 +1,94 @@
+# Docker Compose 設定範例 - 包含自訂資料夾掛載
+# 複製此檔案為 docker-compose.yml 並根據您的需求修改
+
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=app:create_app
+      - FLASK_ENV=development
+      - DATABASE_URL=mysql+pymysql://root:password@db/audio_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+      - ./static:/app/static
+      # === 自訂資料夾掛載 - 根據您的需求取消註解並修改 ===
+      # Windows 範例:
+      # - C:\AudioData:C:\AudioData
+      # - D:\Projects\Audio:D:\Projects\Audio
+      # Linux/Mac 範例:
+      # - /home/user/audio_data:/home/user/audio_data
+      # - /mnt/external/audio:/mnt/external/audio
+    depends_on:
+      - db
+      - redis
+    networks:
+      - app-network
+
+  worker:
+    build: .
+    command: celery -A app.celery worker --loglevel=info
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:password@db/audio_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./app:/app/app
+      - ./static:/app/static
+      # === 與 web 服務相同的自訂資料夾掛載 ===
+      # Windows 範例:
+      # - C:\AudioData:C:\AudioData
+      # - D:\Projects\Audio:D:\Projects\Audio
+      # Linux/Mac 範例:
+      # - /home/user/audio_data:/home/user/audio_data
+      # - /mnt/external/audio:/mnt/external/audio
+    depends_on:
+      - db
+      - redis
+    networks:
+      - app-network
+
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=audio_db
+      - TZ=Asia/Taipei
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - app-network
+
+  redis:
+    image: redis:latest
+    networks:
+      - app-network
+
+volumes:
+  mysql-data:
+
+networks:
+  app-network:
+    driver: bridge
+
+# ============================================
+# 使用說明:
+# ============================================
+# 1. 複製此檔案:
+#    copy docker-compose.example.yml docker-compose.yml
+#
+# 2. 編輯 docker-compose.yml
+#
+# 3. 取消註解並修改自訂資料夾路徑
+#
+# 4. 啟動服務:
+#    docker-compose up --build -d
+#
+# 5. 初始化資料庫:
+#    docker-compose exec web flask init-db
+# ============================================
