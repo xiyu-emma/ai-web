@@ -16,6 +16,14 @@
         button { width: 100%; padding: 1em; background-color: #007bff; color: white; border: none; border-radius: 4px; font-size: 1em; cursor: pointer; transition: background-color 0.3s; }
         button:hover { background-color: #0056b3; }
         .help-text { font-size: 0.9em; color: #666; margin-top: 0.3em; }
+        .folder-input-group { display: flex; gap: 10px; align-items: stretch; }
+        .folder-input-group input[type="text"] { flex: 1; }
+        .browse-btn { padding: 0.8em 1.5em; background-color: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; font-size: 0.9em; }
+        .browse-btn:hover { background-color: #5a6268; }
+        #folder_selector { display: none; }
+        .folder-options { margin-top: 0.8em; }
+        .folder-option { display: block; margin-bottom: 0.5em; }
+        .folder-option input[type="radio"] { margin-right: 0.5em; }
     </style>
 </head>
 <body>
@@ -29,11 +37,31 @@
                 <label for="file">Select Audio File (.wav, .mp3):</label>
                 <input type="file" id="file" name="file" accept=".wav,.mp3" required>
             </div>
+            
             <div>
-                <label for="custom_folder">Custom Folder Path (Optional):</label>
-                <input type="text" id="custom_folder" name="custom_folder" placeholder="/path/to/your/folder">
-                <div class="help-text">Leave empty to use default storage location. Provide absolute path for custom storage.</div>
+                <label>Storage Location:</label>
+                <div class="folder-options">
+                    <label class="folder-option">
+                        <input type="radio" name="storage_option" value="default" checked onchange="updateStorageOption()">
+                        Use Default Location (static/results)
+                    </label>
+                    <label class="folder-option">
+                        <input type="radio" name="storage_option" value="custom" onchange="updateStorageOption()">
+                        Choose Custom Folder
+                    </label>
+                </div>
             </div>
+
+            <div id="custom_folder_section" style="display: none;">
+                <label for="custom_folder">Custom Folder Path:</label>
+                <div class="folder-input-group">
+                    <input type="text" id="custom_folder" name="custom_folder" placeholder="C:\\Users\\YourName\\Documents\\AudioData" readonly>
+                    <button type="button" class="browse-btn" onclick="document.getElementById('folder_selector').click()">Browse Folder</button>
+                    <input type="file" id="folder_selector" webkitdirectory directory multiple style="display: none;">
+                </div>
+                <div class="help-text">Click "Browse Folder" to select where to save audio segments and spectrograms. Files will be saved in a subfolder named with the upload ID.</div>
+            </div>
+            
             <div>
                 <label for="sample_rate">Sample Rate:</label>
                 <select id="sample_rate" name="sample_rate">
@@ -71,5 +99,60 @@
             <button type="submit">Upload and Generate Spectrograms</button>
         </form>
     </div>
+
+    <script>
+        function updateStorageOption() {
+            const customOption = document.querySelector('input[name="storage_option"][value="custom"]').checked;
+            const customSection = document.getElementById('custom_folder_section');
+            const customFolderInput = document.getElementById('custom_folder');
+            
+            if (customOption) {
+                customSection.style.display = 'block';
+            } else {
+                customSection.style.display = 'none';
+                customFolderInput.value = '';
+            }
+        }
+
+        document.getElementById('folder_selector').addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                // Get the folder path from the first file
+                const firstFile = files[0];
+                const fullPath = firstFile.webkitRelativePath || firstFile.path || '';
+                
+                if (fullPath) {
+                    // Extract folder path (remove filename)
+                    const folderPath = fullPath.substring(0, fullPath.lastIndexOf('/'));
+                    
+                    // For Windows, convert to backslashes
+                    let displayPath = folderPath;
+                    
+                    // Try to get absolute path (works in some browsers)
+                    if (firstFile.path) {
+                        displayPath = firstFile.path.substring(0, firstFile.path.lastIndexOf('\\'));
+                    } else {
+                        // Show relative path as hint
+                        displayPath = 'Selected: ' + folderPath;
+                    }
+                    
+                    document.getElementById('custom_folder').value = displayPath;
+                } else {
+                    alert('Unable to detect folder path. Please manually enter the full path (e.g., C:\\\\Users\\\\YourName\\\\Documents\\\\AudioData)');
+                    document.getElementById('custom_folder').readOnly = false;
+                    document.getElementById('custom_folder').placeholder = 'Enter full path manually';
+                }
+            }
+        });
+
+        // Allow manual editing if browser doesn't support folder selection
+        document.getElementById('custom_folder').addEventListener('dblclick', function() {
+            if (confirm('Do you want to manually enter the folder path?')) {
+                this.readOnly = false;
+                this.placeholder = 'Enter full path (e.g., C:\\\\Users\\\\YourName\\\\Documents\\\\AudioData)';
+                this.focus();
+            }
+        });
+    </script>
 </body>
 </html>
