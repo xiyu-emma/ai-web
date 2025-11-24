@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="utf-8">
-    <title>分析結果 - {{ upload.original_filename }}</title>
+    <title>Analysis Results - {{ upload.original_filename }}</title>
     <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
@@ -70,8 +70,9 @@
         .btn-primary:hover { background-color: #0056b3; }
         .btn-success { background-color: #28a745; }
         .btn-success:hover { background-color: #218838; }
+        .btn-info { background-color: #17a2b8; }
+        .btn-info:hover { background-color: #138496; }
 
-        /* --- 分頁樣式 --- */
         .pagination {
             display: flex;
             justify-content: center;
@@ -105,25 +106,29 @@
 <body>
     <div class="container">
         <div class="header-container">
-            <h2>分析結果</h2>
-            <p><strong>原始檔案:</strong> {{ upload.original_filename }}</p>
-            <p><strong>分析時間:</strong> {{ upload.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}</p>
-            <p><strong>結果總數:</strong> {{ pagination.total }} 筆</p>
+            <h2>Analysis Results</h2>
+            <p><strong>Original File:</strong> {{ upload.original_filename }}</p>
+            <p><strong>Analysis Time:</strong> {{ upload.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}</p>
+            <p><strong>Total Results:</strong> {{ pagination.total }}</p>
+            {% if upload.custom_folder_path %}
+            <p><strong>Storage Path:</strong> {{ upload.custom_folder_path }}/{{ upload.id }}</p>
+            {% endif %}
         </div>
 
         <div class="button-container">
-            <a href="{{ url_for('main.history') }}" class="action-button btn-secondary">返回歷史紀錄</a>
-            <a href="{{ url_for('main.index') }}" class="action-button btn-primary">返回上傳頁面</a>
-            <a href="{{ url_for('main.labeling_page', upload_id=upload.id) }}" class="action-button btn-success">進入標記模式</a>
+            <a href="{{ url_for('main.history') }}" class="action-button btn-secondary">Back to History</a>
+            <a href="{{ url_for('main.index') }}" class="action-button btn-primary">Back to Upload</a>
+            <a href="{{ url_for('main.labeling_page', upload_id=upload.id) }}" class="action-button btn-success">Labeling Mode</a>
+            <a href="{{ url_for('main.export_csv', upload_id=upload.id) }}" class="action-button btn-info">Download CSV</a>
         </div>
 
         <table>
             <thead>
                 <tr>
-                    <th style="width: 8%;">編號</th>
-                    <th style="width: 15%;">起始秒數</th>
-                    <th>音訊片段</th>
-                    <th>分析圖表</th>
+                    <th style="width: 8%;">No.</th>
+                    <th style="width: 15%;">Start Time</th>
+                    <th>Audio Segment</th>
+                    <th>Spectrogram</th>
                 </tr>
             </thead>
             <tbody>
@@ -140,32 +145,28 @@
                         {% if item.audio_url %}
                         <audio controls controlsList="nodownload">
                             <source src="{{ url_for('static', filename=item.audio_url) }}" type="audio/wav">
-                            您的瀏覽器不支援音訊播放
+                            Browser does not support audio playback
                         </audio>
                         {% else %}
-                        <span>(無音訊片段)</span>
+                        <span>(No audio segment)</span>
                         {% endif %}
                     </td>
                     <td>
-                        <img src="{{ url_for('static', filename=item.spectrogram_url) }}" alt="分析圖表">
+                        <img src="{{ url_for('static', filename=item.spectrogram_url) }}" alt="Spectrogram">
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
 
-        <!-- 分頁導覽列 -->
         <nav>
             <ul class="pagination">
-                <!-- 第一頁 -->
                 <li class="{{ 'disabled' if not pagination.has_prev else '' }}">
                     <a href="{{ url_for('main.results', upload_id=upload.id, page=1) }}">&laquo;&laquo;</a>
                 </li>
-                <!-- 上一頁 -->
                 <li class="{{ 'disabled' if not pagination.has_prev else '' }}">
                     <a href="{{ url_for('main.results', upload_id=upload.id, page=pagination.prev_num) }}">&laquo;</a>
                 </li>
-                <!-- 頁碼 -->
                 {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
                     {% if page_num %}
                         <li class="{{ 'active' if page_num == pagination.page else '' }}">
@@ -175,11 +176,9 @@
                         <li class="disabled"><span>...</span></li>
                     {% endif %}
                 {% endfor %}
-                <!-- 下一頁 -->
                 <li class="{{ 'disabled' if not pagination.has_next else '' }}">
                     <a href="{{ url_for('main.results', upload_id=upload.id, page=pagination.next_num) }}">&raquo;</a>
                 </li>
-                <!-- 最後一頁 -->
                 <li class="{{ 'disabled' if not pagination.has_next else '' }}">
                     <a href="{{ url_for('main.results', upload_id=upload.id, page=pagination.pages) }}">&raquo;&raquo;</a>
                 </li>
@@ -188,4 +187,3 @@
     </div>
 </body>
 </html>
-
