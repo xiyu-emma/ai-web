@@ -3,14 +3,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
 
-# 定義時區
+# 定義時區 (台北時間)
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 # --- 1. 基礎資訊表 (Project, Point, Recoder) ---
 
 class ProjectInfo(db.Model):
     """
-    表二、Project Info 紀錄計畫資訊 
+    表二、Project Info 紀錄計畫資訊
     """
     __tablename__ = 'project_info'
     
@@ -25,7 +25,7 @@ class ProjectInfo(db.Model):
 
 class RecoderInfo(db.Model):
     """
-    表四、Recode Info 紀錄錄音機資訊 
+    表四、Recode Info 紀錄錄音機資訊
     """
     __tablename__ = 'recoder_info'
     
@@ -37,8 +37,7 @@ class RecoderInfo(db.Model):
     high_gain = db.Column(db.Float, nullable=True, comment='高增益值')
     low_gain = db.Column(db.Float, nullable=True, comment='低增益值')
     
-    # 表五、儀器狀態定義 
-    # 1:服役中, 2:停用, 3:維修中, 4:校準中, 5:損壞, 6:報廢, 7:遺失, 8:出借中
+    # 表五、儀器狀態定義
     status = db.Column(db.Integer, default=1, comment='儀器狀態')
     
     belong = db.Column(db.String(100), nullable=True, comment='儀器產權')
@@ -48,7 +47,7 @@ class RecoderInfo(db.Model):
 
 class PointInfo(db.Model):
     """
-    表三、Point Info 紀錄計畫內的點位資訊 
+    表三、Point Info 紀錄計畫內的點位資訊
     """
     __tablename__ = 'point_info'
     
@@ -70,20 +69,19 @@ class PointInfo(db.Model):
     # 關聯
     audios = db.relationship('AudioInfo', backref='point', lazy=True)
 
-# --- 2. 核心音檔表 (取代原本的 Upload) ---
+# --- 2. 核心音檔表 (AudioInfo) ---
 
 class AudioInfo(db.Model):
     """
-    表六、Audio Info 音檔資訊 
-    (此表整合了系統原有的 Upload 功能)
+    表六、Audio Info 音檔資訊
     """
     __tablename__ = 'audio_info'
     
     id = db.Column(db.Integer, primary_key=True, comment='id')
-    file_name = db.Column(db.String(255), nullable=False, comment='檔案名稱') # 對應原 original_filename
-    file_path = db.Column(db.String(255), nullable=False, comment='檔案路徑') # 原始檔存放路徑
+    file_name = db.Column(db.String(255), nullable=False, comment='檔案名稱')
+    file_path = db.Column(db.String(255), nullable=False, comment='檔案路徑')
     file_type = db.Column(db.String(50), nullable=False, comment='檔案類型')
-    record_time = db.Column(db.DateTime, default=lambda: datetime.now(TAIPEI_TZ), comment='錄製時間') # 這裡暫代上傳時間
+    record_time = db.Column(db.DateTime, default=lambda: datetime.now(TAIPEI_TZ), comment='錄製時間')
     record_duration = db.Column(db.Float, nullable=True, comment='錄製長度(s)')
     target = db.Column(db.String(100), nullable=True, comment='目標物')
     target_type = db.Column(db.Integer, nullable=True, comment='目標物類型')
@@ -92,23 +90,19 @@ class AudioInfo(db.Model):
     # Foreign Keys
     point_id = db.Column(db.Integer, db.ForeignKey('point_info.id'), nullable=True, comment='所屬點位')
 
-    # --- 以下為系統運作所需欄位 (非計畫書定義，但為程式運行必要) ---
-    # 用於儲存分析後的結果資料夾路徑 (static/results/...)
+    # --- 系統運作所需欄位 ---
     result_path = db.Column(db.String(255), nullable=True) 
-    # 儲存參數 (JSON)
     params = db.Column(db.Text, nullable=True)
-    # 任務狀態 (PENDING, PROCESSING, COMPLETED, FAILED)
     status = db.Column(db.String(50), default='PENDING', nullable=False)
-    # 進度 (0-100)
     progress = db.Column(db.Integer, default=0, nullable=False)
 
-    # 關聯 (對應切片後的結果 Result)
-    results = db.relationship('Result', backref='audio_info', lazy=True, cascade="all, delete-orphan")
-    
-    # 關聯 (對應計畫書的三種辨識資訊)
+    # 關聯
     cetaceans = db.relationship('CetaceanInfo', backref='audio_info', lazy=True, cascade="all, delete-orphan")
     ships = db.relationship('ShipInfo', backref='audio_info', lazy=True, cascade="all, delete-orphan")
     turbines = db.relationship('TurbineInfo', backref='audio_info', lazy=True, cascade="all, delete-orphan")
+    
+    # 關聯：Result 表格 (用於查詢頻譜圖檔案)
+    results = db.relationship('Result', backref='audio_info', lazy=True, cascade="all, delete-orphan")
 
     def get_params(self):
         try:
@@ -116,7 +110,7 @@ class AudioInfo(db.Model):
         except (json.JSONDecodeError, TypeError):
             return {}
     
-    # 為了相容舊程式碼，增加 original_filename 屬性別名
+    # 屬性別名 (相容舊程式)
     @property
     def original_filename(self):
         return self.file_name
@@ -125,31 +119,35 @@ class AudioInfo(db.Model):
     def upload_timestamp(self):
         return self.record_time
 
-# --- 3. 分析結果與標記表 (依據計畫書擴充) ---
+# --- 3. 分析結果與標記表 (依據計畫書) ---
 
 class CetaceanInfo(db.Model):
     """
-    表七、Cetacean Info 鯨豚資訊 
+    表七、Cetacean Info 鯨豚資訊
+    (嚴格遵守圖片規格：無檔案路徑、無額外 label_id 欄位)
     """
     __tablename__ = 'cetacean_info'
     
     id = db.Column(db.Integer, primary_key=True, comment='id')
+    
+    # 所屬音檔 (Foreign Key)
     audio_id = db.Column(db.Integer, db.ForeignKey('audio_info.id'), nullable=False, comment='所屬音檔')
     
+    # 時間資訊
     start_sample = db.Column(db.Integer, nullable=True, comment='音檔中開始位置')
     end_sample = db.Column(db.Integer, nullable=True, comment='音檔中結束位置')
     event_duration = db.Column(db.Integer, nullable=True, comment='持續時間(s)')
     
-    # 表八、鯨豚聲紋類型 
-    # 0:未知, 1:上升型, 2:下降型, 3:U型, 4:倒U型, 6:sin型, 7:嘎搭聲, 8:突發脈衝聲
-    event_type = db.Column(db.Integer, nullable=True, comment='類型')
+    # 類型資訊
+    # event_type 對應表八 (0:未知, 1:上升型, 2:下降型...)
+    event_type = db.Column(db.Integer, default=0, comment='類型')
     
-    # 0: 人工, 1: AI
-    detect_type = db.Column(db.Integer, default=0, comment='辨識類型')
+    # 辨識類型 (0: 人工, 1: AI, 2: 系統自動切割)
+    detect_type = db.Column(db.Integer, default=2, comment='辨識類型(0->人工, 1->AI)')
 
 class ShipInfo(db.Model):
     """
-    表九、Ship Info 船舶資訊 
+    表九、Ship Info 船舶資訊
     """
     __tablename__ = 'ship_info'
     
@@ -159,14 +157,11 @@ class ShipInfo(db.Model):
     start_sample = db.Column(db.Integer, nullable=True, comment='音檔中開始位置')
     end_sample = db.Column(db.Integer, nullable=True, comment='音檔中結束位置')
     event_duration = db.Column(db.Integer, nullable=True, comment='持續時間(s)')
-    
-    # 表十、船舶類型定義 
-    # 1:油輪, 2:散裝船, 3:貨輪, 4:漁船, 5:快艇, 6:舷外機船
     event_type = db.Column(db.Integer, nullable=True, comment='類型')
 
 class TurbineInfo(db.Model):
     """
-    表十一、Turbine Info 風機資訊 
+    表十一、Turbine Info 風機資訊
     """
     __tablename__ = 'turbine_info'
     
@@ -176,30 +171,30 @@ class TurbineInfo(db.Model):
     start_sample = db.Column(db.Integer, nullable=True, comment='音檔中開始位置')
     end_sample = db.Column(db.Integer, nullable=True, comment='音檔中結束位置')
     event_duration = db.Column(db.Integer, nullable=True, comment='持續時間(s)')
-    
-    # 表十二、風機狀態定義 
-    # 1:運轉, 2:打樁
     event_type = db.Column(db.Integer, nullable=True, comment='類型')
 
-# --- 4. 系統運作與訓練輔助表 (保留原系統架構以支援 MLOPS 流程) ---
+# --- 4. 系統檔案儲存表 (Result) ---
 
 class Result(db.Model):
     """
-    儲存切割後的頻譜圖檔案資訊，用於網頁顯示與訓練資料集生成。
+    儲存系統切割後的「檔案實體」資訊。
+    頻譜圖、音訊片段的實體路徑都存在這裡。
     """
     __tablename__ = 'results'
     id = db.Column(db.Integer, primary_key=True)
     
-    # 注意：這裡改為關聯到新的 AudioInfo
+    # 關聯回 AudioInfo
     upload_id = db.Column(db.Integer, db.ForeignKey('audio_info.id'), nullable=False)
     
+    # 檔案路徑
     audio_filename = db.Column(db.String(255), nullable=True)
     spectrogram_filename = db.Column(db.String(255), nullable=False)
     spectrogram_training_filename = db.Column(db.String(255), nullable=False)
     
+    # 標籤關聯 (保留作為與 Label 表的連結，雖然主要邏輯在 CetaceanInfo.event_type)
     label_id = db.Column(db.Integer, db.ForeignKey('labels.id'), nullable=True)
     label = db.relationship('Label', backref='results')
-    
+
     @property
     def audio_url(self):
         if self.audio_filename:
@@ -214,9 +209,11 @@ class Result(db.Model):
     def spectrogram_training_url(self):
         return f"{self.audio_info.result_path}/{self.spectrogram_training_filename}"
 
+# --- 5. 輔助表 (Label, TrainingRun) ---
+
 class Label(db.Model):
     """
-    標籤管理表 (用於 API /api/labels) [cite: 7]
+    標籤管理表 (對應表八的類型定義)
     """
     __tablename__ = 'labels'
     id = db.Column(db.Integer, primary_key=True)
@@ -225,7 +222,7 @@ class Label(db.Model):
 
 class TrainingRun(db.Model):
     """
-    紀錄 AI 模型訓練任務狀態與結果 [cite: 7]
+    紀錄 AI 模型訓練任務狀態與結果
     """
     __tablename__ = 'training_runs'
     id = db.Column(db.Integer, primary_key=True)
