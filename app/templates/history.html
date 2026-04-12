@@ -8,8 +8,12 @@
         <h1>分析歷史紀錄</h1>
         <div class="sort-options">
             <span style="color: var(--text-light); margin-right: 10px;">排序：</span>
-            <a href="{{ url_for('main.history', sort='desc') }}" class="btn btn-sm {{ 'btn-secondary' if current_sort != 'desc' else 'btn-primary' }}" style="padding: 5px 12px; font-size: 0.9rem;">由新到舊</a>
-            <a href="{{ url_for('main.history', sort='asc') }}" class="btn btn-sm {{ 'btn-secondary' if current_sort != 'asc' else 'btn-primary' }}" style="padding: 5px 12px; font-size: 0.9rem;">由舊到新</a>
+            <a href="{{ url_for('main.history', sort='desc') }}"
+                class="btn btn-sm {{ 'btn-secondary' if current_sort != 'desc' else 'btn-primary' }}"
+                style="padding: 5px 12px; font-size: 0.9rem;">由新到舊</a>
+            <a href="{{ url_for('main.history', sort='asc') }}"
+                class="btn btn-sm {{ 'btn-secondary' if current_sort != 'asc' else 'btn-primary' }}"
+                style="padding: 5px 12px; font-size: 0.9rem;">由舊到新</a>
         </div>
     </div>
 
@@ -23,40 +27,56 @@
                         <th>原始檔案</th>
                         <th>狀態</th>
                         <th>分析時間</th>
-                        <th>參數摘要</th>
+                        <th>參數摘要 / 標記數據</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for upload in uploads %}
                     <tr id="upload-row-{{ upload.id }}">
-                        <td><input type="checkbox" name="upload_ids" value="{{ upload.id }}" class="upload-checkbox"></td>
+                        <td><input type="checkbox" name="upload_ids" value="{{ upload.id }}" class="upload-checkbox">
+                        </td>
                         <td><strong>#{{ upload.id }}</strong></td>
                         <td>
                             <div style="font-weight: 500;">{{ upload.original_filename }}</div>
                         </td>
                         <td class="status-cell">
                             {% if upload.status == 'PROCESSING' %}
-                                <div style="width: 120px; background: #eee; height: 8px; border-radius: 4px; overflow: hidden; position: relative;">
-                                    <div class="progress-bar" style="width: {{ upload.progress }}%; background: var(--highlight); height: 100%; transition: width 0.4s;"></div>
+                            <div
+                                style="width: 120px; background: #eee; height: 8px; border-radius: 4px; overflow: hidden; position: relative;">
+                                <div class="progress-bar"
+                                    style="width: {{ upload.progress }}%; background: var(--highlight); height: 100%; transition: width 0.4s;">
                                 </div>
-                                <small class="progress-text" style="color: var(--primary-med);">{{ upload.progress }}%</small>
+                            </div>
+                            <small class="progress-text" style="color: var(--primary-med);">{{ upload.progress
+                                }}%</small>
                             {% else %}
-                                <span class="status-badge status-{{ upload.status }}">{{ upload.status }}</span>
+                            <span class="status-badge status-{{ upload.status }}">{{ upload.status }}</span>
                             {% endif %}
                         </td>
                         <td>{{ upload.upload_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>
-                            {% set p = upload.get_params() %}
-                            <small style="color: #666;">
-                                {{ p.spec_type }} | {{ p.segment_duration }}s | ov: {{ p.overlap }}%
-                            </small>
+                            {% if upload.label_counts %}
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 250px;">
+                                    {% for label_name, count in upload.label_counts.items() %}
+                                    <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; border: 1px solid #bae6fd;">
+                                        {{ label_name }}: {{ count }}
+                                    </span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {% set p = upload.get_params() %}
+                                <small style="color: #666;">
+                                    {{ p.spec_type }} | {{ p.segment_duration }}s | ov: {{ p.overlap }}%
+                                </small>
+                            {% endif %}
                         </td>
                         <td class="action-cell">
                             {% if upload.status == 'COMPLETED' %}
-                                <a href="{{ url_for('main.results', upload_id=upload.id) }}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.85rem;">查看結果</a>
+                            <a href="{{ url_for('main.results', upload_id=upload.id) }}" class="btn btn-secondary"
+                                style="padding: 4px 10px; font-size: 0.85rem;">查看結果</a>
                             {% else %}
-                                <span style="color: #ccc; font-size: 0.85rem;">--</span>
+                            <span style="color: #ccc; font-size: 0.85rem;">--</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -70,12 +90,173 @@
                 </tbody>
             </table>
         </div>
-        
+
         <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem;">
-            <button type="button" class="btn" style="background: #20c997; color: white;" onclick="submitTraining()">啟動模型訓練</button>
+            <button type="button" class="btn btn-secondary" onclick="openImportModal()">匯入 Excel 標記</button>
+            <button type="button" class="btn" style="background: #20c997; color: white;"
+                onclick="openTrainingModal()">啟動模型訓練</button>
             <button type="button" class="btn btn-danger" onclick="submitDeletion()">刪除選取項目</button>
         </div>
     </form>
+
+    <!-- 訓練設定彈窗 -->
+    <div id="training-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🎯 訓練設定</h2>
+                <button class="modal-close" onclick="closeTrainingModal()">&times;</button>
+            </div>
+            <form id="training-config-form" method="post" action="{{ url_for('main.start_training') }}">
+                <div class="modal-body">
+                    <!-- 隱藏欄位：儲存選取的 upload_ids -->
+                    <div id="hidden-upload-ids"></div>
+
+                    <!-- 模型選擇 -->
+                    <div class="form-group">
+                        <label style="font-weight: 600; margin-bottom: 0.75rem; display: block;">選擇模型</label>
+                        <div style="display: grid; gap: 0.75rem;">
+                            <label class="model-option selected" onclick="selectModel(this)">
+                                <input type="radio" name="model_type" value="yolov8n-cls" checked>
+                                <div class="model-option-header">
+                                    <span>🚀</span> YOLOv8n 分類
+                                </div>
+                                <div class="model-option-desc">輕量級，訓練快速，適合快速實驗</div>
+                            </label>
+                            <label class="model-option" onclick="selectModel(this)">
+                                <input type="radio" name="model_type" value="yolov8s-cls">
+                                <div class="model-option-header">
+                                    <span>⚡</span> YOLOv8s 分類
+                                </div>
+                                <div class="model-option-desc">標準版，精度與速度平衡</div>
+                            </label>
+                            <label class="model-option" onclick="selectModel(this)">
+                                <input type="radio" name="model_type" value="resnet18">
+                                <div class="model-option-header">
+                                    <span>🧠</span> ResNet18
+                                </div>
+                                <div class="model-option-desc">經典 CNN 架構，穩定可靠</div>
+                            </label>
+                            <label class="model-option" onclick="selectModel(this)">
+                                <input type="radio" name="model_type" value="efficientnet_b0">
+                                <div class="model-option-header">
+                                    <span>💎</span> EfficientNet-B0
+                                </div>
+                                <div class="model-option-desc">高效能 CNN，精度優秀</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 訓練參數 -->
+                    <div class="form-group" style="margin-top: 1.5rem;">
+                        <label style="font-weight: 600; margin-bottom: 0.75rem; display: block;">訓練參數</label>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="epochs">訓練輪數 (Epochs)</label>
+                                <input type="number" id="epochs" name="epochs" value="50" min="1" max="500">
+                            </div>
+                            <div class="form-group">
+                                <label for="batch_size">批次大小 (Batch Size)</label>
+                                <select id="batch_size" name="batch_size">
+                                    <option value="8">8</option>
+                                    <option value="16" selected>16</option>
+                                    <option value="32">32</option>
+                                    <option value="64">64</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="learning_rate">學習率 (Learning Rate)</label>
+                                <select id="learning_rate" name="learning_rate">
+                                    <option value="0.0001">0.0001</option>
+                                    <option value="0.001" selected>0.001</option>
+                                    <option value="0.01">0.01</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="image_size">圖片尺寸 (px)</label>
+                                <select id="image_size" name="image_size">
+                                    <option value="128">128</option>
+                                    <option value="224" selected>224</option>
+                                    <option value="256">256</option>
+                                    <option value="320">320</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row" id="loss-function-group" style="margin-top: 1rem;">
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>Loss Function (損失函數設定)</label>
+                                <div style="margin-top: 0.5rem; display: flex; gap: 1.5rem;" id="loss_checkbox_container">
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                        <input type="radio" name="loss_function" value="cross_entropy" id="chk_cross_entropy" onclick="toggleLoss('ce')" checked> 
+                                        Cross Entropy
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                        <input type="radio" name="loss_function" value="focal_loss_binary" id="chk_focal_binary" onclick="toggleLoss('binary')"> 
+                                        Binary Focal Loss
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                        <input type="radio" name="loss_function" value="focal_loss_multi_class" id="chk_focal_multi" onclick="toggleLoss('multi')"> 
+                                        Multi-class Focal Loss
+                                    </label>
+                                </div>
+                                <div id="loss_description" style="color: #0369a1; background: #e0f2fe; padding: 8px 12px; border-radius: 4px; margin-top: 10px; font-size: 0.9rem; border: 1px solid #bae6fd;"><strong>Cross Entropy Loss</strong>：標準交叉熵損失函數，適用於大多數分類任務。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeTrainingModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">開始訓練</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 匯入 Excel 標記設定彈窗 -->
+<div id="import-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>📊 匯入 Excel 標記</h2>
+            <button class="modal-close" onclick="closeImportModal()">&times;</button>
+        </div>
+        <form id="import-config-form" onsubmit="submitImportExcel(event)">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="importLabelSelect" style="font-weight: 600; margin-bottom: 0.75rem; display: block;">請選擇要套用的標籤</label>
+                    <select id="importLabelSelect" class="form-select" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="whale" selected>1. 鯨魚 (Whale)</option>
+                        <option value="unknown">0. 無標籤</option>
+                        <optgroup label="鯨豚聲紋">
+                            <option value="whale_unknown">10. 未知聲紋 (Unknown Vocalization)</option>
+                            <option value="whale_upsweep">11. 上升型 (Upsweep)</option>
+                            <option value="whale_downsweep">12. 下降型 (Downsweep)</option>
+                            <option value="whale_concave">13. U型 (Concave)</option>
+                            <option value="whale_convex">14. 倒U型 (Convex)</option>
+                            <option value="whale_sine">15. sin型 (Sine)</option>
+                            <option value="whale_click">16. 嘎搭聲 (Click)</option>
+                            <option value="whale_burst">17. 突發脈衝聲 (Burst)</option>
+                            <option value="whale_constant">18. 常數型 (Constant)</option>
+                        </optgroup>
+                        <optgroup label="環境與干擾">
+                            <option value="noise">90. 環境噪音 (Noise)</option>
+                            <option value="ship">91. 船舶 (Ship)</option>
+                            <option value="piling">92. 風機打樁 (Piling)</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-top: 1.5rem;">
+                    <label for="excelModalUploadInput" style="font-weight: 600; margin-bottom: 0.75rem; display: block;">選擇 Excel 檔案 (可多選)</label>
+                    <input type="file" id="excelModalUploadInput" multiple accept=".xlsx" style="width: 100%;" required />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitImport">開始匯入</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div id="data-config" data-new-upload-id="{{ request.args.get('new_upload_id') }}"></div>
@@ -94,17 +275,100 @@
         return Array.from(document.querySelectorAll('.upload-checkbox:checked')).map(cb => cb.value);
     }
 
-    // 提交訓練
-    function submitTraining() {
+    // 開啟訓練設定彈窗
+    function openTrainingModal() {
         const selectedIds = getSelectedIds();
         if (selectedIds.length === 0) {
             alert('請至少選取一個項目來進行訓練。');
             return;
         }
-        const form = document.getElementById('history-form');
-        form.action = "{{ url_for('main.start_training') }}";
-        form.submit();
+
+        // 將選取的 ID 放入隱藏欄位
+        const hiddenContainer = document.getElementById('hidden-upload-ids');
+        hiddenContainer.innerHTML = selectedIds.map(id =>
+            `<input type="hidden" name="upload_ids" value="${id}">`
+        ).join('');
+
+        document.getElementById('training-modal').classList.add('active');
+        
+        // 預設觸發一次以更新 loss function 的可用狀態
+        const selectedOption = document.querySelector('.model-option.selected');
+        if(selectedOption) {
+            selectModel(selectedOption);
+        }
     }
+
+    // 關閉訓練設定彈窗
+    function closeTrainingModal() {
+        document.getElementById('training-modal').classList.remove('active');
+    }
+
+    // 模型選項選取效果
+    function selectModel(element) {
+        document.querySelectorAll('.model-option').forEach(opt => opt.classList.remove('selected'));
+        element.classList.add('selected');
+        
+        const radio = element.querySelector('input[type="radio"]');
+        if (radio) {
+            radio.checked = true;
+            const modelType = radio.value;
+            const lossGroup = document.getElementById('loss-function-group');
+            const chkCe = document.getElementById('chk_cross_entropy');
+            const chkBinary = document.getElementById('chk_focal_binary');
+            const chkMulti = document.getElementById('chk_focal_multi');
+            const lossDesc = document.getElementById('loss_description');
+            
+            if (modelType.startsWith('yolo')) {
+                if(chkCe) chkCe.disabled = true;
+                if(chkBinary) chkBinary.disabled = true;
+                if(chkMulti) chkMulti.disabled = true;
+                if(chkCe) chkCe.checked = false;
+                if(chkBinary) chkBinary.checked = false;
+                if(chkMulti) chkMulti.checked = false;
+                if(lossDesc) lossDesc.style.display = 'none';
+                if(lossGroup) {
+                    lossGroup.style.opacity = '0.5';
+                    lossGroup.style.pointerEvents = 'none';
+                }
+            } else {
+                if(chkCe) chkCe.disabled = false;
+                if(chkBinary) chkBinary.disabled = false;
+                if(chkMulti) chkMulti.disabled = false;
+                if(lossGroup) {
+                    lossGroup.style.opacity = '1';
+                    lossGroup.style.pointerEvents = 'auto';
+                }
+                
+                if(chkCe && !chkCe.checked && !chkBinary.checked && !chkMulti.checked) {
+                    chkCe.checked = true;
+                    toggleLoss('ce');
+                } else if(lossDesc) {
+                    lossDesc.style.display = 'block';
+                }
+            }
+        }
+    }
+
+    // Focal Loss Checkbox 切換邏輯
+    function toggleLoss(type) {
+        const lossDesc = document.getElementById('loss_description');
+        
+        if (type === 'ce') {
+            lossDesc.innerHTML = '<strong>Cross Entropy Loss</strong>：標準交叉熵損失函數，適用於大多數分類任務。';
+            lossDesc.style.display = 'block';
+        } else if (type === 'binary') {
+            lossDesc.innerHTML = '<strong>Binary Focal Loss</strong>：各類別獨立判定，用於將每個類別當成2分類問題（是/否），增強對稀有特徵的敏感度。';
+            lossDesc.style.display = 'block';
+        } else if (type === 'multi') {
+            lossDesc.innerHTML = '<strong>Multi-class Focal Loss</strong>：處理資料不平衡，用於多類別分類（類別之間互斥），主要增強模型對稀有類別的關注。';
+            lossDesc.style.display = 'block';
+        }
+    }
+
+    // 點擊 Modal 外部關閉
+    document.getElementById('training-modal').addEventListener('click', function (e) {
+        if (e.target === this) closeTrainingModal();
+    });
 
     // 提交刪除
     function submitDeletion() {
@@ -145,7 +409,7 @@
                 startPolling(newUploadId);
             }
         }
-        
+
         // 掃描頁面上所有可能有進度條的行
         const rowsToUpdate = document.querySelectorAll('tr[id^="upload-row-"]');
         rowsToUpdate.forEach(row => {
@@ -172,7 +436,7 @@
                         console.error(`Error fetching status for upload ${uploadId}:`, error);
                         stopPolling(uploadId);
                     });
-            }, 2000); 
+            }, 2000);
 
             activeIntervals.set(uploadId, intervalId);
         }
@@ -189,12 +453,12 @@
             if (!row) return;
 
             const statusCell = row.querySelector('.status-cell');
-            
+
             if (data.status === 'PROCESSING' || data.status === 'PENDING') {
                 // 更新進度條
                 let progressBar = statusCell.querySelector('.progress-bar');
                 let progressText = statusCell.querySelector('.progress-text');
-                
+
                 // 如果原本沒有進度條 (例如剛從 PENDING 變 PROCESSING)，需要重建 HTML
                 if (!progressBar) {
                     statusCell.innerHTML = `
@@ -205,15 +469,15 @@
                     `;
                 } else {
                     progressBar.style.width = `${data.progress}%`;
-                    if(progressText) progressText.textContent = `${data.progress}%`;
+                    if (progressText) progressText.textContent = `${data.progress}%`;
                 }
             } else {
                 // 任務結束 (COMPLETED 或 FAILED)
                 stopPolling(data.id);
-                
+
                 // 更新狀態標籤
                 statusCell.innerHTML = `<span class="status-badge status-${data.status}">${data.status}</span>`;
-                
+
                 // 如果成功，更新操作按鈕
                 if (data.status === 'COMPLETED') {
                     const actionCell = row.querySelector('.action-cell');
@@ -223,5 +487,66 @@
             }
         }
     });
+
+    // 點擊 Modal 外部關閉
+    document.getElementById('import-modal').addEventListener('click', function (e) {
+        if (e.target === this) closeImportModal();
+    });
+
+    // 開啟/關閉匯入彈窗
+    function openImportModal() {
+        document.getElementById('import-modal').classList.add('active');
+    }
+    
+    function closeImportModal() {
+        document.getElementById('import-modal').classList.remove('active');
+        document.getElementById('excelModalUploadInput').value = ''; // Reset file input
+    }
+
+    // 處理 Excel 上傳表單提交
+    async function submitImportExcel(event) {
+        event.preventDefault();
+        
+        const files = document.getElementById('excelModalUploadInput').files;
+        if (files.length === 0) return;
+        
+        const selectedLabel = document.getElementById('importLabelSelect').value;
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i]);
+        }
+        formData.append('default_label', selectedLabel);
+
+        const btn = document.getElementById('btnSubmitImport');
+        const originalText = btn.innerText;
+        btn.innerText = '匯入中...';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/import_excel', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            
+            if (response.ok) {
+                let msg = `成功處理 ${data.success_count} 個檔案，共新增 ${data.total_labels} 個標記。\n`;
+                if (data.errors && data.errors.length > 0) {
+                    msg += `\n請注意以下錯誤/警告：\n${data.errors.join('\n')}`;
+                }
+                alert(msg);
+                closeImportModal();
+            } else {
+                alert(`匯入失敗: ${data.error || '未知錯誤'}`);
+            }
+        } catch (err) {
+            console.error(err);
+            alert('網路錯誤，無法匯入');
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
 </script>
 {% endblock %}

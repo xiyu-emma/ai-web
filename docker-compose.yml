@@ -1,18 +1,19 @@
 services:
   web:
     build: .
+    shm_size: '4g'
     ports:
       - "5000:5000"
     volumes:
       - ./app:/code/app
+    restart: always
     environment:
       - PYTHONPATH=/code
       - DATABASE_URL=mysql+pymysql://user:password@db/audio_db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - FLASK_APP=app:create_app
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - FLASK_ENV=production
       - TZ=Asia/Taipei
     command: flask run --host=0.0.0.0
     depends_on:
@@ -20,6 +21,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   db:
     image: mysql:8.0
@@ -55,7 +63,9 @@ services:
 
   worker:
     build: .
-    command: celery -A app.celery worker --loglevel=info
+    restart: always
+    shm_size: '8g'
+    command: celery -A app.celery worker --loglevel=info --pool=solo
     volumes:
       - ./app:/code/app
     environment:
@@ -69,7 +79,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   mysql_data:
+
 

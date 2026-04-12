@@ -15,4 +15,8 @@ soundfile
 cryptography
 tensorflow
 Pillow
-tensorflow-cpu
+# tensorflow-cpu removed
+
+scikit-learn
+pandas
+openpyxl
