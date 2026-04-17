@@ -11,7 +11,7 @@ scipy
 numpy
 # PyTorch (already in base image)
 # torch
-# torchaudio
+torchaudio
 # torchvision
 soundfile
 cryptography

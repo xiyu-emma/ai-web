@@ -13,7 +13,6 @@ RUN sed -i 's/http:\/\//https:\/\//g' /etc/apt/sources.list.d/ubuntu.sources 2>/
     sed -i 's/http:\/\//https:\/\//g' /etc/apt/sources.list 2>/dev/null || true; \
     apt-get update && apt-get install -y \
     libsndfile1 \
-    nvidia-cuda-toolkit \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 複製依賴文件並安裝 Python 套件

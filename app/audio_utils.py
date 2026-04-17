@@ -10,25 +10,16 @@ from scipy.io import wavfile
 from datetime import datetime
 from .ai_model import run_inference
 import soundfile as sf
-import os
-os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-
-import tensorflow as tf
-tf.config.optimizer.set_jit(False)
-import gc
-
-# 新增：設定 GPU 記憶體動態分配，避免 Celery/Flask 背景任務 OOM
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(f"TensorFlow GPU 設定失敗: {e}")
+import torch
+import torchaudio
+import gc  # 垃圾回收模組
 
 from scipy.signal import butter, sosfiltfilt, decimate, get_window, lfilter, hilbert
 from numpy.fft import fft, fftfreq
+
+# --- 偵測 GPU 裝置 ---
+_TORCH_DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"[audio_utils] PyTorch 頻譜圖運算裝置: {_TORCH_DEVICE}")
 
 # --- YAMNet 參數設定 ---
 
@@ -45,38 +36,50 @@ class YAMNetParams:
     tflite_compatible: bool = False
 
 def waveform_to_log_mel_spectrogram_patches(waveform, params):
-    # 已解除強制 CPU 鎖定，讓 TensorFlow 發揮 GPU 算力
-    if not tf.is_tensor(waveform):
-        waveform = tf.convert_to_tensor(waveform, dtype=tf.float32)
+    """
+    使用 PyTorch (torchaudio) 計算 Log Mel 頻譜圖，支援 GPU 加速。
+    取代原本的 TensorFlow 實作，解決 ultralytics Docker 環境下 libdevice 缺失問題。
+    """
+    window_length_samples = int(round(params.sample_rate * params.stft_window_seconds))
+    hop_length_samples = int(round(params.sample_rate * params.stft_hop_seconds))
+    fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
 
-    with tf.name_scope('log_mel_features'):
-        window_length_samples = int(round(params.sample_rate * params.stft_window_seconds))
-        hop_length_samples = int(round(params.sample_rate * params.stft_hop_seconds))
-        fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
-        num_spectrogram_bins = fft_length // 2 + 1
-        
-        # 計算幅度頻譜圖 (TFLite 相容性分支已移除，因為邏輯相同)
-        magnitude_spectrogram = tf.abs(tf.signal.stft(
-            signals=waveform,
-            frame_length=window_length_samples,
-            frame_step=hop_length_samples,
-            fft_length=fft_length))
+    # 建立 MelSpectrogram 轉換器 (在目標裝置上運行)
+    mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=int(params.sample_rate),
+        n_fft=fft_length,
+        win_length=window_length_samples,
+        hop_length=hop_length_samples,
+        n_mels=params.mel_bands,
+        f_min=params.mel_min_hz,
+        f_max=params.mel_max_hz,
+        power=1.0,  # 幅度頻譜 (非功率頻譜)
+    ).to(_TORCH_DEVICE)
 
-        linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
-            num_mel_bins=params.mel_bands,
-            num_spectrogram_bins=num_spectrogram_bins,
-            sample_rate=params.sample_rate,
-            lower_edge_hertz=params.mel_min_hz,
-            upper_edge_hertz=params.mel_max_hz)
-            
-        mel_spectrogram = tf.matmul(
-            magnitude_spectrogram, linear_to_mel_weight_matrix)
-        
-        # 已透過安裝 nvidia-cuda-toolkit 修復 libdevice 缺失問題
-        # 重新將對數運算交回 TensorFlow (GPU)
-        log_mel_spectrogram = tf.math.log(mel_spectrogram + params.log_offset)
+    # 將 waveform 轉為 PyTorch tensor 並移至 GPU
+    if isinstance(waveform, np.ndarray):
+        waveform_tensor = torch.from_numpy(waveform).float()
+    else:
+        waveform_tensor = torch.tensor(waveform, dtype=torch.float32)
 
-        return log_mel_spectrogram
+    if waveform_tensor.dim() == 1:
+        waveform_tensor = waveform_tensor.unsqueeze(0)  # [1, samples]
+
+    waveform_tensor = waveform_tensor.to(_TORCH_DEVICE)
+
+    # GPU 加速運算：STFT + Mel 濾波 + Log
+    mel_spec = mel_transform(waveform_tensor)  # [1, n_mels, time]
+    log_mel_spec = torch.log(mel_spec + params.log_offset)
+
+    # 轉回 NumPy (移回 CPU)
+    result = log_mel_spec.squeeze(0).T.cpu().numpy()  # [time, n_mels] 與原本 TF 版本相同
+
+    # 釋放 GPU 記憶體
+    del waveform_tensor, mel_spec, log_mel_spec
+    if _TORCH_DEVICE.type == 'cuda':
+        torch.cuda.empty_cache()
+
+    return result
 
 # --- DEMON 參數與輔助函式 ---
 
