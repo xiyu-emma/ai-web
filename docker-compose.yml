@@ -1,26 +1,22 @@
 services:
   web:
     build: .
+    restart: always
     shm_size: '4g'
     ports:
       - "5000:5000"
     volumes:
       - ./app:/code/app
-    restart: always
     environment:
-      - PYTHONPATH=/code
-      - DATABASE_URL=mysql+pymysql://user:password@db/audio_db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - FLASK_APP=app:create_app
-      - FLASK_ENV=production
-      - TZ=Asia/Taipei
-    command: flask run --host=0.0.0.0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      PYTHONPATH: "/code"
+      DATABASE_URL: "mysql+pymysql://user:password@db/audio_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      FLASK_APP: "app:create_app"
+      FLASK_ENV: "production"
+      TZ: "Asia/Taipei"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "all"
     deploy:
       resources:
         reservations:
@@ -28,6 +24,11 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   db:
     image: mysql:8.0
@@ -69,16 +70,13 @@ services:
     volumes:
       - ./app:/code/app
     environment:
-      - PYTHONPATH=/code
-      - DATABASE_URL=mysql+pymysql://user:password@db/audio_db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - TZ=Asia/Taipei
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      PYTHONPATH: "/code"
+      DATABASE_URL: "mysql+pymysql://user:password@db/audio_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      TZ: "Asia/Taipei"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "all"
     deploy:
       resources:
         reservations:
@@ -86,8 +84,11 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   mysql_data:
-
-

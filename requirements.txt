@@ -3,14 +3,16 @@ Flask-SQLAlchemy
 celery
 redis
 PyMySQL
-ultralytics
+# ultralytics (already in base image)
+# ultralytics
 librosa
 matplotlib
 scipy
 numpy
-torch
-torchaudio
-torchvision
+# PyTorch (already in base image)
+# torch
+# torchaudio
+# torchvision
 soundfile
 cryptography
 tensorflow

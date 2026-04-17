@@ -10,8 +10,22 @@ from scipy.io import wavfile
 from datetime import datetime
 from .ai_model import run_inference
 import soundfile as sf
+import os
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import tensorflow as tf
-import gc  # 新增：垃圾回收模組
+tf.config.optimizer.set_jit(False)
+import gc
+
+# 新增：設定 GPU 記憶體動態分配，避免 Celery/Flask 背景任務 OOM
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(f"TensorFlow GPU 設定失敗: {e}")
 
 from scipy.signal import butter, sosfiltfilt, decimate, get_window, lfilter, hilbert
 from numpy.fft import fft, fftfreq
@@ -31,36 +45,38 @@ class YAMNetParams:
     tflite_compatible: bool = False
 
 def waveform_to_log_mel_spectrogram_patches(waveform, params):
-    # 強制在 CPU 上執行，避免多行程式中出現 CUDA_ERROR_INVALID_HANDLE
-    with tf.device('/CPU:0'):
-        if not tf.is_tensor(waveform):
-            waveform = tf.convert_to_tensor(waveform, dtype=tf.float32)
+    # 已解除強制 CPU 鎖定，讓 TensorFlow 發揮 GPU 算力
+    if not tf.is_tensor(waveform):
+        waveform = tf.convert_to_tensor(waveform, dtype=tf.float32)
 
-        with tf.name_scope('log_mel_features'):
-            window_length_samples = int(round(params.sample_rate * params.stft_window_seconds))
-            hop_length_samples = int(round(params.sample_rate * params.stft_hop_seconds))
-            fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
-            num_spectrogram_bins = fft_length // 2 + 1
+    with tf.name_scope('log_mel_features'):
+        window_length_samples = int(round(params.sample_rate * params.stft_window_seconds))
+        hop_length_samples = int(round(params.sample_rate * params.stft_hop_seconds))
+        fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
+        num_spectrogram_bins = fft_length // 2 + 1
+        
+        # 計算幅度頻譜圖 (TFLite 相容性分支已移除，因為邏輯相同)
+        magnitude_spectrogram = tf.abs(tf.signal.stft(
+            signals=waveform,
+            frame_length=window_length_samples,
+            frame_step=hop_length_samples,
+            fft_length=fft_length))
+
+        linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
+            num_mel_bins=params.mel_bands,
+            num_spectrogram_bins=num_spectrogram_bins,
+            sample_rate=params.sample_rate,
+            lower_edge_hertz=params.mel_min_hz,
+            upper_edge_hertz=params.mel_max_hz)
             
-            # 計算幅度頻譜圖 (TFLite 相容性分支已移除，因為邏輯相同)
-            magnitude_spectrogram = tf.abs(tf.signal.stft(
-                signals=waveform,
-                frame_length=window_length_samples,
-                frame_step=hop_length_samples,
-                fft_length=fft_length))
+        mel_spectrogram = tf.matmul(
+            magnitude_spectrogram, linear_to_mel_weight_matrix)
+        
+        # 已透過安裝 nvidia-cuda-toolkit 修復 libdevice 缺失問題
+        # 重新將對數運算交回 TensorFlow (GPU)
+        log_mel_spectrogram = tf.math.log(mel_spectrogram + params.log_offset)
 
-            linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
-                num_mel_bins=params.mel_bands,
-                num_spectrogram_bins=num_spectrogram_bins,
-                sample_rate=params.sample_rate,
-                lower_edge_hertz=params.mel_min_hz,
-                upper_edge_hertz=params.mel_max_hz)
-                
-            mel_spectrogram = tf.matmul(
-                magnitude_spectrogram, linear_to_mel_weight_matrix)
-            log_mel_spectrogram = tf.math.log(mel_spectrogram + params.log_offset)
-
-            return log_mel_spectrogram
+        return log_mel_spectrogram
 
 # --- DEMON 參數與輔助函式 ---
 
