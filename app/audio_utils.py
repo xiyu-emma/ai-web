@@ -5,6 +5,8 @@ import matplotlib
 # 使用非互動式後端，這在伺服器環境下至關重要
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import numpy as np
 from scipy.io import wavfile
 from datetime import datetime
@@ -13,6 +15,7 @@ import soundfile as sf
 import torch
 import torchaudio
 import gc  # 垃圾回收模組
+import concurrent.futures
 
 from scipy.signal import butter, sosfiltfilt, decimate, get_window, lfilter, hilbert
 from numpy.fft import fft, fftfreq
@@ -150,7 +153,9 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
     # 標準 STFT 處理
     fig = None
     try:
-        fig, ax = plt.subplots(figsize=(6, 4))
+        fig = Figure(figsize=(6, 4))
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
         
         time_str = ""
         if 'time_start' in spec_params and 'time_end' in spec_params:
@@ -193,8 +198,8 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         librosa.display.specshow(display_data, **specshow_kwargs)
         ax.set_title(f'STFT Spectrogram{time_str}')
         fig.colorbar(ax.collections[0], ax=ax, format='%+2.0f dB')
-        plt.tight_layout()
-        plt.savefig(out_path_display, dpi=100)
+        fig.tight_layout()
+        fig.savefig(out_path_display, dpi=100)
         
         # 2. 清除內容並繪製訓練用圖 (無座標軸純圖)
         fig.clear()
@@ -202,15 +207,14 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         librosa.display.specshow(display_data, sr=sr, ax=ax, hop_length=hop_length)
         ax.axis('off')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        plt.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
+        fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
     
     except Exception as e:
         print(f"繪圖失敗 ({spec_type}): {e}")
     finally:
         # 強制關閉圖表釋放記憶體
         if fig:
-            plt.close(fig)
-        plt.close('all')
+            fig.clf()
 
 def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params=None):
     """繪製 YAMNet 格式的 Log Mel 頻譜圖"""
@@ -228,7 +232,9 @@ def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_pa
         log_mel_spectrogram = waveform_to_log_mel_spectrogram_patches(y, params)
         data_to_plot = np.array(log_mel_spectrogram).T
 
-        fig, ax = plt.subplots(figsize=(9.69, 3.7)) 
+        fig = Figure(figsize=(9.69, 3.7))
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
         hop_length = int(params.sample_rate * params.stft_hop_seconds)
         
         img = librosa.display.specshow(
@@ -248,8 +254,8 @@ def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_pa
             time_str = f" ({spec_params['time_start']:.1f}s - {spec_params['time_end']:.1f}s)"
         ax.set_title(f"Mel Spectrogram{time_str}")
         fig.colorbar(img, ax=ax, format='%+2.0f dB')
-        plt.tight_layout()
-        plt.savefig(out_path_display, dpi=100)
+        fig.tight_layout()
+        fig.savefig(out_path_display, dpi=100)
         
         fig.clear()
         ax = fig.add_subplot(111)
@@ -262,12 +268,11 @@ def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_pa
         )
         ax.axis('off')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        plt.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
+        fig.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
     except Exception as e:
         print(f"繪製 YAMNet Log Mel 頻譜圖時發生錯誤: {e}")
     finally:
-        if fig: plt.close(fig)
-        plt.close('all')
+        if fig: fig.clf()
 
 def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, spec_params=None):
     fig = None
@@ -283,10 +288,13 @@ def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, sp
         processed_signal = decimated_signal - np.mean(decimated_signal)
         fs_demo = sr // decimation_factor
         window = get_window(params['WINDOW_TYPE'], params['WINDOW_SIZE'])
-        S, freqs, times, _ = plt.specgram(processed_signal, NFFT=params['WINDOW_SIZE'], Fs=fs_demo, window=window, noverlap=int(params['WINDOW_SIZE'] * params['WINDOW_OVERLAP_RATIO']))
+        fig = Figure(figsize=(6, 4))
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        
+        S, freqs, times, _ = ax.specgram(processed_signal, NFFT=params['WINDOW_SIZE'], Fs=fs_demo, window=window, noverlap=int(params['WINDOW_SIZE'] * params['WINDOW_OVERLAP_RATIO']))
         S_db = 10 * np.log10(S + 1e-9)
 
-        fig, ax = plt.subplots(figsize=(6, 4))
         ax.pcolormesh(times, freqs, S_db, cmap='viridis', shading='auto')
         ax.set_ylim(0, params['FREQ_YLIM'])
         ax.set_ylabel('Modulation Frequency (Hz)')
@@ -297,8 +305,8 @@ def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, sp
             time_str = f" ({spec_params['time_start']:.1f}s - {spec_params['time_end']:.1f}s)"
         ax.set_title(f"Classic DEMON Spectrogram (2D){time_str}")
         fig.colorbar(ax.collections[0], ax=ax, label='Amplitude (dB)')
-        plt.tight_layout()
-        plt.savefig(out_path_display, dpi=100)
+        fig.tight_layout()
+        fig.savefig(out_path_display, dpi=100)
         
         fig.clear()
         ax = fig.add_subplot(111)
@@ -306,10 +314,9 @@ def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, sp
         ax.set_ylim(0, params['FREQ_YLIM'])
         ax.axis('off')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        plt.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
+        fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
     finally:
-        if fig: plt.close(fig)
-        plt.close('all')
+        if fig: fig.clf()
 
 def save_envelope_spectrum_plot(segment, sr, out_path_display, out_path_training, spec_params=None):
     fig = None
@@ -330,7 +337,9 @@ def save_envelope_spectrum_plot(segment, sr, out_path_display, out_path_training
         half_N = N // 2
         xf_positive, yf_positive = xf[:half_N], 2.0/N * np.abs(yf[:half_N])
         
-        fig, ax = plt.subplots(figsize=(6, 4))
+        fig = Figure(figsize=(6, 4))
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
         ax.plot(xf_positive, yf_positive)
         
         time_str = ""
@@ -341,8 +350,8 @@ def save_envelope_spectrum_plot(segment, sr, out_path_display, out_path_training
         ax.set_ylabel('Magnitude')
         ax.grid(True)
         ax.set_xlim(0, 300)
-        plt.tight_layout()
-        plt.savefig(out_path_display, dpi=100)
+        fig.tight_layout()
+        fig.savefig(out_path_display, dpi=100)
 
         fig.clear()
         ax = fig.add_subplot(111)
@@ -350,21 +359,55 @@ def save_envelope_spectrum_plot(segment, sr, out_path_display, out_path_training
         ax.set_xlim(0, 300)
         ax.axis('off')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        plt.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
+        fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
     except Exception as e:
         print(f"處理包絡線頻譜時發生錯誤: {e}")
     finally:
-        if fig: plt.close(fig)
-        plt.close('all')
+        if fig: fig.clf()
 
 # --- 記憶體優化處理流程 ---
 
+def _process_single_segment(i, start_s, y_segment, sr, basename, result_dir, spec_type, spec_params, training_spec_path, is_mono):
+    import os
+    import numpy as np
+    from scipy.io import wavfile
+    from .ai_model import run_inference
+    
+    audio_filename = f"{basename}_part{i}.wav"
+    display_spec_filename = f"{basename}_spec_display_{i}.png"
+    training_spec_filename = f"{basename}_spec_training_{i}.png"
+    
+    audio_path = os.path.join(result_dir, audio_filename)
+    display_spec_path = os.path.join(result_dir, display_spec_filename)
+
+    # 儲存切割音檔 (確保正確處理多聲道)
+    if y_segment.ndim > 1:
+        y_mono = librosa.to_mono(y_segment)
+        if np.max(np.abs(y_mono)) < 1e-4 and np.max(np.abs(y_segment)) > 1e-3:
+            y_segment = y_segment[0]
+        else:
+            y_segment = y_mono
+            
+    audio_int16 = (y_segment * 32767).astype(np.int16)
+    wavfile.write(audio_path, sr, audio_int16)
+    
+    mono_segment = y_segment
+    current_spec_params = {} if spec_params is None else spec_params.copy()
+    current_spec_params['time_start'] = start_s
+    current_spec_params['time_end'] = start_s + (len(y_segment) / sr)
+    
+    save_spectrogram(mono_segment, sr, display_spec_path, training_spec_path, spec_type, current_spec_params)
+    
+    return {
+        'audio': audio_filename,
+        'display_spectrogram': display_spec_filename,
+        'training_spectrogram': training_spec_filename,
+        'detections': run_inference(training_spec_path)
+    }
+
 def process_large_audio(filepath, result_dir, spec_type, segment_duration=2.0, overlap_ratio=0.5, target_sr=None, is_mono=True, progress_callback=None, spec_params=None):
     """
-    以逐段精確載入的方式處理大型音訊檔案，確保所有片段長度一致且節省記憶體。
-    
-    參數:
-        spec_params: 頻譜圖參數字典，傳遞給 save_spectrogram 函式
+    以一次性完整載入並切分的方式處理大型音訊檔案，搭配 ThreadPool 平行處理加速。
     """
     all_results = []
     basename = f"{os.path.splitext(os.path.basename(filepath))[0]}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -387,92 +430,65 @@ def process_large_audio(filepath, result_dir, spec_type, segment_duration=2.0, o
         else:
             sr = target_sr if target_sr else original_sr
 
-        frame_length = int(segment_duration * sr)
+        # 一次性完整載入音訊，大幅減少 I/O 等待 (O(N^2) seek issues in MP3)
+        print(f"正在完整載入音訊: {filepath} ({total_samples} samples)")
+        full_audio, _ = librosa.load(filepath, sr=sr, mono=is_mono)
+        print("音訊載入完成。")
 
-        if total_samples < frame_length:
+        frame_length = int(segment_duration * sr)
+        actual_total_samples = full_audio.shape[-1]
+
+        if actual_total_samples < frame_length:
             print("警告：音訊檔案總長度小於設定的單一片段長度。")
-            y_segment, _ = librosa.load(filepath, sr=sr, mono=is_mono)
-            num_samples = y_segment.shape[-1]
-            if num_samples < frame_length:
-                pad_width = [(0, 0)] * y_segment.ndim
-                pad_width[-1] = (0, frame_length - num_samples)
-                y_segment = np.pad(y_segment, pad_width)
-            segments_to_process = [(0, y_segment)]
+            y_segment = full_audio
+            pad_width = [(0, 0)] * y_segment.ndim
+            pad_width[-1] = (0, frame_length - actual_total_samples)
+            y_segment = np.pad(y_segment, pad_width)
+            segments_to_process = [(0, 0.0, y_segment)]
         else:
-            total_duration_sec = total_samples / original_sr
-            step_sec = segment_duration * (1 - overlap_ratio)
-            start_seconds = np.arange(0, total_duration_sec - segment_duration + 0.001, step_sec)
-            segments_to_process = [(s, None) for s in start_seconds]
+            step_samples = int(frame_length * (1 - overlap_ratio))
+            segments_to_process = []
+            start_sample = 0
+            idx = 0
+            while start_sample <= actual_total_samples - frame_length:
+                start_s = start_sample / sr
+                y_segment = full_audio[..., start_sample:start_sample + frame_length]
+                segments_to_process.append((idx, start_s, y_segment))
+                start_sample += step_samples
+                idx += 1
 
         total_segments = len(segments_to_process)
+        completed_tasks = 0
         
-        # 迴圈處理
-        for i, (start_s, preloaded_segment) in enumerate(segments_to_process):
-            # 1. 處理音訊資料
-            if preloaded_segment is not None:
-                y_segment = preloaded_segment
-            else:
-                y_segment, _ = librosa.load(
-                    filepath, 
-                    sr=sr, 
-                    mono=is_mono, 
-                    offset=start_s, 
-                    duration=segment_duration
+        # 準備結果的 list (保持順序)
+        all_results = [None] * total_segments
+        
+        print(f"開始平行處理 {total_segments} 個音訊片段...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as executor:
+            futures = {}
+            for idx, start_s, y_seg in segments_to_process:
+                training_spec_path = os.path.join(result_dir, f"{basename}_spec_training_{idx}.png")
+                fut = executor.submit(
+                    _process_single_segment, 
+                    idx, start_s, y_seg, sr, basename, result_dir, spec_type, spec_params, training_spec_path, is_mono
                 )
-
-            num_samples = y_segment.shape[-1]
-            if num_samples < frame_length:
-                pad_width = [(0, 0)] * y_segment.ndim
-                pad_width[-1] = (0, frame_length - num_samples)
-                y_segment = np.pad(y_segment, pad_width)
-            
-            y_segment = y_segment[..., :frame_length]
-
-            # 2. 設定檔名路徑
-            audio_filename = f"{basename}_part{i}.wav"
-            display_spec_filename = f"{basename}_spec_display_{i}.png"
-            training_spec_filename = f"{basename}_spec_training_{i}.png"
-
-            audio_path = os.path.join(result_dir, audio_filename)
-            display_spec_path = os.path.join(result_dir, display_spec_filename)
-            training_spec_path = os.path.join(result_dir, training_spec_filename)
-            
-            # 3. 儲存切割音檔 (確保正確處理多聲道)
-            if y_segment.ndim > 1:
-                # 預防立體聲反相抵消 (Phase Cancellation) 導致輸出全黑/無聲
-                y_mono = librosa.to_mono(y_segment)
-                if np.max(np.abs(y_mono)) < 1e-4 and np.max(np.abs(y_segment)) > 1e-3:
-                    y_segment = y_segment[0] # 若平均後消失，代表反相，直接取用左聲道
-                else:
-                    y_segment = y_mono
+                futures[fut] = idx
+                
+            for fut in concurrent.futures.as_completed(futures):
+                idx = futures[fut]
+                try:
+                    res = fut.result()
+                    all_results[idx] = res
+                    completed_tasks += 1
+                    if progress_callback:
+                        progress_callback(completed_tasks, total_segments)
+                except Exception as exc:
+                    print(f"片段 {idx} 處理發生錯誤: {exc}")
                     
-            audio_int16 = (y_segment * 32767).astype(np.int16)
-            wavfile.write(audio_path, sr, audio_int16)
-            
-            # 4. 繪製頻譜圖 (這裡最耗記憶體)
-            mono_segment = y_segment
-            if spec_params is None:
-                spec_params = {}
-            spec_params['time_start'] = start_s
-            spec_params['time_end'] = start_s + segment_duration
-            
-            save_spectrogram(mono_segment, sr, display_spec_path, training_spec_path, spec_type, spec_params)
-            
-            # 5. 加入結果列表
-            all_results.append({
-                'audio': audio_filename,
-                'display_spectrogram': display_spec_filename,
-                'training_spectrogram': training_spec_filename,
-                'detections': run_inference(training_spec_path)
-            })
-            
-            if progress_callback:
-                progress_callback(i + 1, total_segments)
-            
-            # 每處理 10 張圖，就強制執行一次垃圾回收
-            if i % 10 == 0:
-                plt.close('all') 
-                gc.collect()    
+        # 過濾異常片段
+        all_results = [r for r in all_results if r is not None]
+        del full_audio
+        gc.collect()
         
     except Exception as e:
         print(f"處理大型音訊檔案時發生錯誤: {e}")

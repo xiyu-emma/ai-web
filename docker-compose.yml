@@ -65,8 +65,8 @@ services:
   worker:
     build: .
     restart: always
-    shm_size: '8g'
-    command: celery -A app.celery worker --loglevel=info --pool=solo
+    shm_size: '12g'
+    command: celery -A app.celery worker --loglevel=info --pool=threads --concurrency=3
     volumes:
       - ./app:/code/app
     environment:
