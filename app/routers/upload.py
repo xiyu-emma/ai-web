@@ -152,51 +152,102 @@ def import_excel():
                 added = 0
                 for idx, row in df.iterrows():
                     csv_filename = str(row['filename']).strip()
+                    if csv_filename.startswith('images/'):
+                        csv_filename = csv_filename[7:]
+                    
                     new_label = str(row[label_col]).strip()
                     original_audio = str(row.get('original_audio', '')).strip()
                     
-                    new_event_type = NAME_TO_EVENT_TYPE.get(new_label, 0)
+                    try:
+                        new_event_type = int(new_label)
+                    except ValueError:
+                        # 支援大小寫不敏感，以及中文對應
+                        NAME_TO_EVENT_TYPE_EXTENDED = {
+                            "unlabeled": 0, "whale": 1, "unknown vocalization": 10, "upsweep": 11,
+                            "downsweep": 12, "concave": 13, "convex": 14, "sine": 15, "click": 16,
+                            "burst": 17, "constant": 18, "noise": 90, "ship": 91, "piling": 92,
+                            "未知": 0, "無標記": 0, "鯨魚": 1, "未知發聲": 10, "上升型": 11,
+                            "下降型": 12, "u型": 13, "倒u型": 14, "sin型": 15, "嘎搭聲": 16,
+                            "突發脈衝聲": 17, "常數型": 18, "環境噪音": 90, "船舶": 91, "風機打樁": 92
+                        }
+                        new_event_type = NAME_TO_EVENT_TYPE_EXTENDED.get(new_label.lower(), 0)
+                        
                     new_bbox_label = EVENT_TYPE_TO_STR.get(new_event_type, "unknown")
                     
-                    targets = []
-                    if original_audio and original_audio.lower() != 'nan':
-                        audios = AudioInfo.query.filter_by(file_name=original_audio).all()
-                        for audio in audios:
-                            r = Result.query.filter_by(upload_id=audio.id, spectrogram_training_filename=csv_filename).first()
-                            if r:
-                                targets.append((r, audio.id, csv_filename))
-                    else:
-                        match = re.search(r'upload_(\d+)_(.+)', csv_filename)
-                        if match:
-                            u_id = match.group(1)
-                            fname = match.group(2)
-                            r = Result.query.filter_by(upload_id=u_id, spectrogram_training_filename=fname).first()
-                            if r:
-                                targets.append((r, u_id, fname))
+                    # 使用使用者的邏輯: 檔名第一個數字代表 upload_id，最後一個數字代表切片編號
+                    name_without_ext = os.path.splitext(csv_filename)[0]
+                    numbers = re.findall(r'\d+', name_without_ext)
                     
-                    for r, u_id, fname in targets:
-                        r_idx_match = re.search(r'_spec_training_(\d+)\.', fname)
-                        if not r_idx_match:
-                            r_idx_match = re.search(r'^(\d+)_', fname)
+                    processed = False
+                    if len(numbers) >= 2:
+                        u_id = int(numbers[0])
+                        r_idx = int(numbers[-1])
                         
-                        if r_idx_match:
-                            r_idx = int(r_idx_match.group(1))
-                            cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
-                            if cet:
-                                cet.event_type = new_event_type
-                                cet.detect_type = 0
+                        r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
+                        cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
+                        
+                        if r and cet:
+                            cet.event_type = new_event_type
+                            cet.detect_type = 0
                                 
-                                existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
-                                if existing_bbox:
-                                    existing_bbox.label = new_bbox_label
-                                else:
-                                    new_box = BBoxAnnotation(
-                                        result_id=r.id,
-                                        label=new_bbox_label,
-                                        x=0.0, y=0.0, width=1.0, height=1.0
-                                    )
-                                    db.session.add(new_box)
-                                added += 1
+                            existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                            if existing_bbox:
+                                existing_bbox.label = new_bbox_label
+                            else:
+                                new_box = BBoxAnnotation(
+                                    result_id=r.id,
+                                    label=new_bbox_label,
+                                    x=0.0, y=0.0, width=1.0, height=1.0
+                                )
+                                db.session.add(new_box)
+                            added += 1
+                            processed = True
+                            
+                    # 原有邏輯作為安全備用，防止檔名特殊時失效
+                    if not processed:
+                        targets = []
+                        if original_audio and original_audio.lower() != 'nan':
+                            audios = AudioInfo.query.filter_by(file_name=original_audio).all()
+                            for audio in audios:
+                                r = Result.query.filter_by(upload_id=audio.id, spectrogram_training_filename=csv_filename).first()
+                                if r:
+                                    targets.append((r, audio.id, csv_filename))
+                        else:
+                            match = re.search(r'upload_(\d+)_(.+)', csv_filename)
+                            if match:
+                                u_id = match.group(1)
+                                fname = match.group(2)
+                                r = Result.query.filter_by(upload_id=u_id, spectrogram_training_filename=fname).first()
+                                if r:
+                                    targets.append((r, u_id, fname))
+                            else:
+                                r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
+                                for r in r_all:
+                                    targets.append((r, r.upload_id, csv_filename))
+                        
+                        for r, u_id, fname in targets:
+                            r_idx_match = re.search(r'_spec_training_(\d+)\.', fname)
+                            if not r_idx_match:
+                                r_idx_match = re.search(r'^(\d+)_', fname)
+                            
+                            if r_idx_match:
+                                r_idx = int(r_idx_match.group(1))
+                                cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
+                                if cet:
+                                    cet.event_type = new_event_type
+                                    cet.detect_type = 0
+                                    
+                                    existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                                    if existing_bbox:
+                                        existing_bbox.label = new_bbox_label
+                                    else:
+                                        new_box = BBoxAnnotation(
+                                            result_id=r.id,
+                                            label=new_bbox_label,
+                                            x=0.0, y=0.0, width=1.0, height=1.0
+                                        )
+                                        db.session.add(new_box)
+                                    added += 1
                 db.session.commit()
                 total_labels_inserted += added
                 success_count += 1
