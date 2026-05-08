@@ -232,8 +232,11 @@ class InferenceService:
                 
                     # 寫入標記
                     if predicted_id != 0:
-                        cetacean_item.event_type = predicted_id
-                        cetacean_item.detect_type = 1 # 標記為 AI 辨識
+                        cetacean_item.ai_event_type = predicted_id
+                        # 如果不是人工標記 (detect_type != 0) 或者尚未標記 (event_type == 0)，則套用 AI 預測
+                        if getattr(cetacean_item, 'detect_type', 2) != 0 or getattr(cetacean_item, 'event_type', 0) == 0:
+                            cetacean_item.event_type = predicted_id
+                            cetacean_item.detect_type = 1 # 標記為 AI 辨識
                         count += 1
                         
                 except Exception as e:
@@ -390,8 +393,11 @@ class InferenceService:
                                 predicted_id = cnn_labels_map[pred_idx]
                     
                     if predicted_id != 0:
-                        cetacean_item.event_type = predicted_id
-                        cetacean_item.detect_type = 1
+                        cetacean_item.ai_event_type = predicted_id
+                        # 如果不是人工標記 (detect_type != 0) 或者尚未標記 (event_type == 0)，則套用 AI 預測
+                        if getattr(cetacean_item, 'detect_type', 2) != 0 or getattr(cetacean_item, 'event_type', 0) == 0:
+                            cetacean_item.event_type = predicted_id
+                            cetacean_item.detect_type = 1
                         count += 1
                         
                 except Exception as e:

@@ -166,7 +166,7 @@ def import_excel():
                             "unlabeled": 0, "whale": 1, "unknown vocalization": 10, "upsweep": 11,
                             "downsweep": 12, "concave": 13, "convex": 14, "sine": 15, "click": 16,
                             "burst": 17, "constant": 18, "noise": 90, "ship": 91, "piling": 92,
-                            "未知": 0, "無標記": 0, "鯨魚": 1, "未知發聲": 10, "上升型": 11,
+                            "未知": 0, "無標記": 0, "鯨豚Cetacean": 1, "鯨魚": 1, "未知發聲": 10, "上升型": 11,
                             "下降型": 12, "u型": 13, "倒u型": 14, "sin型": 15, "嘎搭聲": 16,
                             "突發脈衝聲": 17, "常數型": 18, "環境噪音": 90, "船舶": 91, "風機打樁": 92
                         }

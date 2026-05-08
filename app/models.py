@@ -230,7 +230,10 @@ class AudioInfo(db.Model):
             {'segment_duration': 2.0, 'overlap': 50}
         """
         try:
-            return json.loads(self.params) if self.params else {}
+            params = json.loads(self.params) if self.params else {}
+            if params.get('spec_type') == 'yamnet_log_mel':
+                params['spec_type'] = 'log_mel'
+            return params
         except (json.JSONDecodeError, TypeError):
             return {}
     
@@ -277,6 +280,7 @@ class CetaceanInfo(db.Model):
     end_sample = db.Column(db.Integer, nullable=True, comment='結束位置')
     event_duration = db.Column(db.Integer, nullable=True, comment='持續時間(s)')
     event_type = db.Column(db.Integer, default=0, comment='類型代碼')
+    ai_event_type = db.Column(db.Integer, nullable=True, comment='AI預測類型')
     detect_type = db.Column(db.Integer, default=2, comment='辨識方式(0=人工,1=AI,2=自動)')
 
 
@@ -454,7 +458,10 @@ class TrainingRun(db.Model):
         """
         if self.params:
             try:
-                return json.loads(self.params)
+                params = json.loads(self.params)
+                if params.get('spec_type') == 'yamnet_log_mel':
+                    params['spec_type'] = 'log_mel'
+                return params
             except (json.JSONDecodeError, TypeError):
                 return {}
         return {}

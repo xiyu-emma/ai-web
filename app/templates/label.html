@@ -123,24 +123,24 @@ justify-content: center;
 display: flex;
 }
 .zoom-modal-img-container {
-    position: relative;
-    display: inline-flex;
-    max-width: 90vw;
-    max-height: 80vh;
-    border-radius: 4px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    animation: zoomIn 0.3s ease;
-    background: #111;
-    align-items: center;
-    justify-content: center;
+position: relative;
+display: inline-flex;
+max-width: 90vw;
+max-height: 80vh;
+border-radius: 4px;
+box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+animation: zoomIn 0.3s ease;
+background: #111;
+align-items: center;
+justify-content: center;
 }
 .zoom-modal-img {
-    display: block;
-    max-width: 90vw;
-    max-height: 80vh;
-    width: auto;
-    height: auto;
-    object-fit: contain;
+display: block;
+max-width: 90vw;
+max-height: 80vh;
+width: auto;
+height: auto;
+object-fit: contain;
 }
 /* 放大鏡框框樣式 */
 .img-magnifier-glass {
@@ -220,8 +220,10 @@ to { transform: scale(1); opacity: 1; }
             </div>
         </div>
         <div style="display: flex; gap: 10px;">
-            <button onclick="clearAllLabels({{ upload.id }})" class="btn" style="background-color: #ef4444; color: white; font-size: 0.9rem;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px; vertical-align: text-bottom;">
+            <button onclick="clearAllLabels({{ upload.id }})" class="btn"
+                style="background-color: #ef4444; color: white; font-size: 0.9rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    style="margin-right: 4px; vertical-align: text-bottom;">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>清空標記
@@ -277,6 +279,13 @@ to { transform: scale(1); opacity: 1; }
                 {% endif %}
             </div>
 
+            {% if item.ai_event_type and item.detect_type == 0 and item.ai_event_type != item.event_type %}
+            <div
+                style="background: #fee2e2; color: #991b1b; padding: 4px 8px; font-size: 0.8rem; text-align: center; border-bottom: 1px solid #fca5a5;">
+                AI 標記: {{ label_map.get(item.ai_event_type, item.ai_event_type) }}
+            </div>
+            {% endif %}
+
             {% if item.spectrogram_url %}
             <a href="#" class="zoom-trigger" data-index="{{ loop.index0 }}" data-id="{{ item.id }}"
                 onclick="openZoomModal(event, this)">
@@ -294,10 +303,11 @@ to { transform: scale(1); opacity: 1; }
                 <select class="label-select {{ 'labeled' if item.event_type and item.event_type != 0 else '' }}"
                     onchange="updateLabel({{ item.id }}, this)">
                     <option value="0" {{ 'selected' if item.event_type==0 }}>0. 無標籤</option>
-                    <option value="1" {{ 'selected' if item.event_type==1 }}>1. 鯨魚 (Whale)</option>
+                    <option value="1" {{ 'selected' if item.event_type==1 }}>1. 鯨豚Cetacean</option>
 
                     <optgroup label="鯨豚聲紋">
-                        <option value="10" {{ 'selected' if item.event_type==10 }}>10. 未知聲紋 (Unknown Vocalization)</option>
+                        <option value="10" {{ 'selected' if item.event_type==10 }}>10. 未知聲紋 (Unknown Vocalization)
+                        </option>
                         <option value="11" {{ 'selected' if item.event_type==11 }}>11. 上升型 (Upsweep)</option>
                         <option value="12" {{ 'selected' if item.event_type==12 }}>12. 下降型 (Downsweep)</option>
                         <option value="13" {{ 'selected' if item.event_type==13 }}>13. U型 (Concave)</option>
@@ -361,7 +371,7 @@ to { transform: scale(1); opacity: 1; }
             <select id="modalLabelSelect" class="label-select"
                 style="min-width: 150px; padding: 6px; font-size: 0.9rem;" onchange="updateLabelFromModal(this)">
                 <option value="0">0. 無標籤</option>
-                <option value="1">1. 鯨魚 (Whale)</option>
+                <option value="1">1. 鯨豚Cetacean</option>
                 <optgroup label="鯨豚聲紋">
                     <option value="10">10. 未知聲紋 (Unknown Vocalization)</option>
                     <option value="11">11. 上升型 (Upsweep)</option>
@@ -624,23 +634,23 @@ to { transform: scale(1); opacity: 1; }
 
     function clearAllLabels(uploadId) {
         if (!confirm("確定要清空這份音檔的所有標記嗎？此操作無法復原。")) return;
-        
+
         fetch(`/api/upload/${uploadId}/clear_labels`, {
             method: 'POST'
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert("已成功清空所有標記！");
-                location.reload();
-            } else {
-                alert("清空失敗：" + data.error);
-            }
-        })
-        .catch(error => {
-            console.error(error);
-            alert("網路錯誤");
-        });
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("已成功清空所有標記！");
+                    location.reload();
+                } else {
+                    alert("清空失敗：" + data.error);
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                alert("網路錯誤");
+            });
     }
 </script>
 {% endblock %}

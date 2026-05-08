@@ -28,7 +28,8 @@ def history():
     label_map = {l.id: l.name for l in labels}
     
     DEFAULT_LABEL_MAP = {
-        1: '1. 鯨魚 (Whale)',
+        0: '0. 無標籤',
+        1: '1. 鯨豚Cetacean',
         10: '10. 上升型 (Upsweep)',
         11: '11. 下降型 (Downsweep)',
         12: '12. U型 (Concave)',
@@ -129,7 +130,30 @@ def labeling_page(upload_id):
     # 查詢已完成的訓練任務供自動標記使用
     training_runs = TrainingRun.query.filter_by(status='SUCCESS').order_by(TrainingRun.timestamp.desc()).all()
 
-    return render_template('label.html', upload=upload_record, pagination=pagination, training_runs=training_runs)
+    DEFAULT_LABEL_MAP = {
+        0: '0. 無標籤',
+        1: '1. 鯨豚Cetacean',
+        10: '10. 未知聲紋 (Unknown Vocalization)',
+        11: '11. 上升型 (Upsweep)',
+        12: '12. 下降型 (Downsweep)',
+        13: '13. U型 (Concave)',
+        14: '14. 倒U型 (Convex)',
+        15: '15. sin型 (Sine)',
+        16: '16. 嘎搭聲 (Click)',
+        17: '17. 突發脈衝聲 (Burst)',
+        18: '18. 常數型 (Constant)',
+        90: '90. 環境噪音 (Noise)',
+        91: '91. 船舶 (Ship)',
+        92: '92. 風機打樁 (Piling)'
+    }
+    
+    labels = Label.query.all()
+    label_map = {l.id: l.name for l in labels}
+    for k, v in DEFAULT_LABEL_MAP.items():
+        if k not in label_map:
+            label_map[k] = v
+
+    return render_template('label.html', upload=upload_record, pagination=pagination, training_runs=training_runs, label_map=label_map)
 
 @main_bp.route('/label-advanced/<int:upload_id>')
 def label_advanced_page(upload_id):

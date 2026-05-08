@@ -84,6 +84,47 @@ def waveform_to_log_mel_spectrogram_patches(waveform, params):
 
     return result
 
+def waveform_to_linear_mel_spectrogram_patches(waveform, params):
+    """
+    使用 PyTorch (torchaudio) 計算線性 Mel 頻譜圖，支援 GPU 加速。
+    不套用 log 計算，保留原始能量值。
+    """
+    window_length_samples = int(round(params.sample_rate * params.stft_window_seconds))
+    hop_length_samples = int(round(params.sample_rate * params.stft_hop_seconds))
+    fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
+
+    mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=int(params.sample_rate),
+        n_fft=fft_length,
+        win_length=window_length_samples,
+        hop_length=hop_length_samples,
+        n_mels=params.mel_bands,
+        f_min=params.mel_min_hz,
+        f_max=params.mel_max_hz,
+        power=1.0,
+    ).to(_TORCH_DEVICE)
+
+    if isinstance(waveform, np.ndarray):
+        waveform_tensor = torch.from_numpy(waveform).float()
+    else:
+        waveform_tensor = torch.tensor(waveform, dtype=torch.float32)
+
+    if waveform_tensor.dim() == 1:
+        waveform_tensor = waveform_tensor.unsqueeze(0)
+
+    waveform_tensor = waveform_tensor.to(_TORCH_DEVICE)
+
+    mel_spec = mel_transform(waveform_tensor)
+    
+    result = mel_spec.squeeze(0).T.cpu().numpy()
+
+    del waveform_tensor, mel_spec
+    if _TORCH_DEVICE.type == 'cuda':
+        torch.cuda.empty_cache()
+
+    return result
+
+
 # --- DEMON 參數與輔助函式 ---
 
 CLASSIC_DEMON_PARAMS = {
@@ -113,7 +154,7 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         sr: 取樣率
         out_path_display: 顯示用頻譜圖路徑
         out_path_training: 訓練用頻譜圖路徑
-        spec_type: 頻譜圖類型 ('mel', 'stft', 'classic_demon', 'envelope_spectrum', 'yamnet_log_mel')
+        spec_type: 頻譜圖類型 ('mel', 'stft', 'classic_demon', 'envelope_spectrum', 'log_mel')
         spec_params: 頻譜圖參數字典，包含:
             - n_fft: FFT window size (預設 1024)
             - hop_length: 步幅 (預設 512)
@@ -146,14 +187,17 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
     elif spec_type == 'envelope_spectrum':
         save_envelope_spectrum_plot(y, sr, out_path_display, out_path_training, spec_params)
         return
-    elif spec_type == 'yamnet_log_mel':
-        save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params)
+    elif spec_type == 'log_mel':
+        save_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params)
+        return
+    elif spec_type == 'linear_mel':
+        save_linear_mel_plot(y, sr, out_path_display, out_path_training, spec_params)
         return
 
     # 標準 STFT 處理
     fig = None
     try:
-        fig = Figure(figsize=(6, 4))
+        fig = Figure(figsize=(9.69, 3.7))
         canvas = FigureCanvas(fig)
         ax = fig.add_subplot(111)
         
@@ -181,7 +225,8 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
             'sr': sr,
             'x_axis': 'time',
             'ax': ax,
-            'y_axis': 'hz'
+            'y_axis': 'hz',
+            'cmap': 'viridis'
         }
 
         # 預防 Matplotlib 繪製極度密集的數據矩陣時引發 OOM (Signal 9 SIGKILL)
@@ -196,6 +241,8 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
 
         # 1. 繪製顯示用圖 (包含座標軸與標題)
         librosa.display.specshow(display_data, **specshow_kwargs)
+        if f_max > 0:
+            ax.set_ylim([f_min, f_max])
         ax.set_title(f'STFT Spectrogram{time_str}')
         fig.colorbar(ax.collections[0], ax=ax, format='%+2.0f dB')
         fig.tight_layout()
@@ -204,7 +251,9 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         # 2. 清除內容並繪製訓練用圖 (無座標軸純圖)
         fig.clear()
         ax = fig.add_subplot(111)
-        librosa.display.specshow(display_data, sr=sr, ax=ax, hop_length=hop_length)
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+        freq_mask = (freqs >= f_min) & (freqs <= f_max)
+        librosa.display.specshow(display_data[freq_mask, :], sr=sr, ax=ax, hop_length=hop_length, cmap='viridis')
         ax.axis('off')
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
         fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
@@ -216,18 +265,25 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         if fig:
             fig.clf()
 
-def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params=None):
+def save_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params=None):
     """繪製 YAMNet 格式的 Log Mel 頻譜圖"""
     fig = None
     try:
         params = YAMNetParams()
-        if spec_params and 'window_overlap' in spec_params:
-            overlap_ratio = spec_params.get('window_overlap', 0.6)  # Default YAMNet overlap is 60% (15ms / 25ms)
-            params.stft_hop_seconds = params.stft_window_seconds * (1.0 - overlap_ratio)
+        params.sample_rate = float(sr)  # 動態調整 sample rate，不再強制寫死 16000
         
-        # 確保取樣率為 16000 Hz (YAMNet 要求)
-        if sr != params.sample_rate:
-            y = librosa.resample(y, orig_sr=sr, target_sr=int(params.sample_rate))
+        if spec_params:
+            if 'window_overlap' in spec_params:
+                overlap_ratio = spec_params.get('window_overlap', 0.6)  # Default YAMNet overlap is 60% (15ms / 25ms)
+                params.stft_hop_seconds = params.stft_window_seconds * (1.0 - overlap_ratio)
+            if 'f_min' in spec_params:
+                params.mel_min_hz = float(spec_params['f_min'])
+            if 'f_max' in spec_params:
+                f_max_val = float(spec_params['f_max'])
+                params.mel_max_hz = f_max_val if f_max_val > 0 else params.sample_rate / 2.0
+                
+        # 確保 mel_max_hz 不會超過 Nyquist
+        params.mel_max_hz = min(params.mel_max_hz, params.sample_rate / 2.0)
         
         log_mel_spectrogram = waveform_to_log_mel_spectrogram_patches(y, params)
         data_to_plot = np.array(log_mel_spectrogram).T
@@ -252,7 +308,7 @@ def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_pa
         time_str = ""
         if spec_params and 'time_start' in spec_params and 'time_end' in spec_params:
             time_str = f" ({spec_params['time_start']:.1f}s - {spec_params['time_end']:.1f}s)"
-        ax.set_title(f"Mel Spectrogram{time_str}")
+        ax.set_title(f"Log Mel Spectrogram{time_str}")
         fig.colorbar(img, ax=ax, format='%+2.0f dB')
         fig.tight_layout()
         fig.savefig(out_path_display, dpi=100)
@@ -271,6 +327,71 @@ def save_yamnet_log_mel_plot(y, sr, out_path_display, out_path_training, spec_pa
         fig.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
     except Exception as e:
         print(f"繪製 YAMNet Log Mel 頻譜圖時發生錯誤: {e}")
+    finally:
+        if fig: fig.clf()
+
+def save_linear_mel_plot(y, sr, out_path_display, out_path_training, spec_params=None):
+    """繪製線性 Mel 頻譜圖"""
+    fig = None
+    try:
+        params = YAMNetParams()
+        params.sample_rate = float(sr)
+        
+        if spec_params:
+            if 'window_overlap' in spec_params:
+                overlap_ratio = spec_params.get('window_overlap', 0.6)
+                params.stft_hop_seconds = params.stft_window_seconds * (1.0 - overlap_ratio)
+            if 'f_min' in spec_params:
+                params.mel_min_hz = float(spec_params['f_min'])
+            if 'f_max' in spec_params:
+                f_max_val = float(spec_params['f_max'])
+                params.mel_max_hz = f_max_val if f_max_val > 0 else params.sample_rate / 2.0
+                
+        # 確保 mel_max_hz 不會超過 Nyquist
+        params.mel_max_hz = min(params.mel_max_hz, params.sample_rate / 2.0)
+        
+        linear_mel_spectrogram = waveform_to_linear_mel_spectrogram_patches(y, params)
+        data_to_plot = np.array(linear_mel_spectrogram).T
+
+        fig = Figure(figsize=(9.69, 3.7))
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        hop_length = int(params.sample_rate * params.stft_hop_seconds)
+        
+        img = librosa.display.specshow(
+            data_to_plot, 
+            sr=params.sample_rate, 
+            hop_length=hop_length, 
+            x_axis='time', 
+            y_axis='mel', 
+            fmin=params.mel_min_hz, 
+            fmax=params.mel_max_hz,
+            ax=ax,
+            cmap='viridis'
+        )
+        
+        time_str = ""
+        if spec_params and 'time_start' in spec_params and 'time_end' in spec_params:
+            time_str = f" ({spec_params['time_start']:.1f}s - {spec_params['time_end']:.1f}s)"
+        ax.set_title(f"Linear Mel Spectrogram{time_str}")
+        fig.colorbar(img, ax=ax)
+        fig.tight_layout()
+        fig.savefig(out_path_display, dpi=100)
+        
+        fig.clear()
+        ax = fig.add_subplot(111)
+        librosa.display.specshow(
+            data_to_plot, 
+            sr=params.sample_rate, 
+            hop_length=hop_length,
+            ax=ax,
+            cmap='viridis'
+        )
+        ax.axis('off')
+        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+        fig.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
+    except Exception as e:
+        print(f"繪製 Linear Mel 頻譜圖時發生錯誤: {e}")
     finally:
         if fig: fig.clf()
 
@@ -424,11 +545,7 @@ def process_large_audio(filepath, result_dir, spec_type, segment_duration=2.0, o
             total_duration = librosa.get_duration(path=filepath)
             total_samples = int(total_duration * original_sr)
 
-        # YAMNet 強制 16000 Hz
-        if spec_type == 'yamnet_log_mel':
-            sr = 16000
-        else:
-            sr = target_sr if target_sr else original_sr
+        sr = target_sr if target_sr else original_sr
 
         # 一次性完整載入音訊，大幅減少 I/O 等待 (O(N^2) seek issues in MP3)
         print(f"正在完整載入音訊: {filepath} ({total_samples} samples)")

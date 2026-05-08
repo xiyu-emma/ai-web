@@ -46,7 +46,7 @@ def api_upload_audio():
     # 擷取頻譜圖等進階參數
     try:
         params_dict = {
-            'spec_type': request.form.get('spec_type', 'yamnet_log_mel'),
+            'spec_type': request.form.get('spec_type', 'log_mel'),
             'segment_duration': float(request.form.get('segment_duration', 2.0)),
             'overlap': float(request.form.get('overlap', 50.0)),
             'sample_rate': request.form.get('sample_rate', 'None'),

@@ -49,7 +49,7 @@ def start_training():
             task_name = 'app.tasks.train_yolo_model'
             model_name = f"{model_type}.pt"
         else:
-            # CNN 模型 (resnet18, efficientnet_b0)
+            # CNN 模型 (resnet18, efficientnet_b0, unet)
             task_name = 'app.tasks.train_cnn_model'
             model_name = model_type
         
@@ -175,7 +175,8 @@ def training_report(run_id):
         'yolov8n-cls': 'YOLOv8n Classification',
         'yolov8s-cls': 'YOLOv8s Classification',
         'resnet18': 'ResNet18 (PyTorch)',
-        'efficientnet_b0': 'EfficientNet-B0 (PyTorch)'
+        'efficientnet_b0': 'EfficientNet-B0 (PyTorch)',
+        'unet': 'U-Net Classifier (PyTorch)'
     }
     
     results_base_path = run.results_path.replace('\\', '/')
@@ -223,7 +224,7 @@ def training_report(run_id):
         # 內建預設標籤對照 (向下相容)
         DEFAULT_LABEL_MAP = {
             0: '0. 無標籤',
-            1: '1. 鯨魚 (Whale)',
+            1: '1. 鯨豚Cetacean',
             10: '10. 未知聲紋 (Unknown Vocalization)',
             11: '11. 上升型 (Upsweep)',
             12: '12. 下降型 (Downsweep)',
