@@ -58,6 +58,7 @@ def upload():
             shared_upload_path_absolute = os.path.join(current_app.root_path, current_app.config['UPLOAD_FOLDER'], shared_upload_filename)
             file.save(shared_upload_path_absolute)
             
+            current_file_uploaded_ids = []
             for stype in spec_types:
                 stype_params = params_dict.copy()
                 stype_params['spec_type'] = stype
@@ -78,9 +79,12 @@ def upload():
                 new_audio.result_path = result_dir_relative
                 db.session.commit()
                 
-                # 派送 Celery 任務 - 自動排隊處理
-                celery.send_task('app.tasks.process_audio_task', args=[upload_id])
+                current_file_uploaded_ids.append(upload_id)
                 uploaded_ids.append(upload_id)
+                
+            # 派送單一合併 Celery 任務處理該實體檔案的所有頻譜圖
+            if current_file_uploaded_ids:
+                celery.send_task('app.tasks.process_audio_group_task', args=[current_file_uploaded_ids])
     
     if uploaded_ids:
         # 導向歷史頁面，顯示第一筆新上傳的檔案

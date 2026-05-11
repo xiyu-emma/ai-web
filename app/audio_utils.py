@@ -206,18 +206,48 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
             time_str = f" ({spec_params['time_start']:.1f}s - {spec_params['time_end']:.1f}s)"
         
         if spec_type == 'stft':
-            D = librosa.stft(
-                y, 
+            # 將 numpy array 轉成 PyTorch tensor 並掛載到 GPU (如果可用)
+            tensor_y = torch.from_numpy(y).float().to(_TORCH_DEVICE)
+            
+            # 設定 window function
+            if window_type == 'hann':
+                window_tensor = torch.hann_window(n_fft).to(_TORCH_DEVICE)
+            elif window_type == 'hamming':
+                window_tensor = torch.hamming_window(n_fft).to(_TORCH_DEVICE)
+            else:
+                window_tensor = torch.hann_window(n_fft).to(_TORCH_DEVICE) # 預設使用 hann
+                
+            # PyTorch STFT (支援 GPU 加速)
+            D_complex = torch.stft(
+                tensor_y, 
                 n_fft=n_fft, 
                 hop_length=hop_length,
                 win_length=n_fft,
-                window=window_type
+                window=window_tensor,
+                center=True,
+                pad_mode='reflect',
+                return_complex=True
             )
+            
+            # 計算 Amplitude 或 Power
+            D_mag = torch.abs(D_complex)
             if power == 2.0:
-                S_db = librosa.power_to_db(np.abs(D)**2, ref=np.max)
+                D_power = D_mag ** 2
+                max_val = torch.max(D_power)
+                # 轉為 dB 尺度: 10 * log10(power / max_power)
+                S_db_tensor = 10.0 * torch.log10(torch.clamp(D_power, min=1e-10) / torch.clamp(max_val, min=1e-10))
             else:
-                S_db = librosa.amplitude_to_db(np.abs(D), ref=np.max)
-            display_data = S_db
+                max_val = torch.max(D_mag)
+                # 轉為 dB 尺度: 20 * log10(mag / max_mag)
+                S_db_tensor = 20.0 * torch.log10(torch.clamp(D_mag, min=1e-10) / torch.clamp(max_val, min=1e-10))
+                
+            # 轉回 NumPy 供後續顯示
+            display_data = S_db_tensor.cpu().numpy()
+            
+            # 釋放 GPU 記憶體
+            del tensor_y, window_tensor, D_complex, D_mag, S_db_tensor
+            if _TORCH_DEVICE.type == 'cuda':
+                torch.cuda.empty_cache()
         else:
             return
 
@@ -623,6 +653,146 @@ def process_large_audio(filepath, result_dir, spec_type, segment_duration=2.0, o
         
     except Exception as e:
         print(f"處理大型音訊檔案時發生錯誤: {e}")
+        raise e
+        
+    return all_results
+
+def _process_segment_group(i, start_s, y_segment, sr, basename, group_defs, is_mono):
+    import os
+    import numpy as np
+    from scipy.io import wavfile
+    from .ai_model import run_inference
+    
+    audio_filename = f"{basename}_part{i}.wav"
+    display_spec_filename = f"{basename}_spec_display_{i}.png"
+    training_spec_filename = f"{basename}_spec_training_{i}.png"
+    
+    # 儲存切割音檔 (確保正確處理多聲道)
+    if y_segment.ndim > 1:
+        y_mono = librosa.to_mono(y_segment)
+        if np.max(np.abs(y_mono)) < 1e-4 and np.max(np.abs(y_segment)) > 1e-3:
+            y_segment = y_segment[0]
+        else:
+            y_segment = y_mono
+            
+    audio_int16 = (y_segment * 32767).astype(np.int16)
+    
+    # 寫入 wav 檔案到所有的 result_dir
+    for g in group_defs:
+        audio_path = os.path.join(g['result_dir'], audio_filename)
+        wavfile.write(audio_path, sr, audio_int16)
+        
+    results = {}
+    mono_segment = y_segment
+    
+    for g in group_defs:
+        r_dir = g['result_dir']
+        spec_type = g['spec_type']
+        spec_params = g['spec_params']
+        
+        training_spec_path = os.path.join(r_dir, training_spec_filename)
+        display_spec_path = os.path.join(r_dir, display_spec_filename)
+        
+        current_spec_params = spec_params.copy() if spec_params else {}
+        current_spec_params['time_start'] = start_s
+        current_spec_params['time_end'] = start_s + (len(mono_segment) / sr)
+        
+        save_spectrogram(mono_segment, sr, display_spec_path, training_spec_path, spec_type, current_spec_params)
+        
+        results[g['id']] = {
+            'audio': audio_filename,
+            'display_spectrogram': display_spec_filename,
+            'training_spectrogram': training_spec_filename,
+            'detections': run_inference(training_spec_path)
+        }
+        
+    return results
+
+def process_large_audio_group(filepath, group_defs, segment_duration=2.0, overlap_ratio=0.5, target_sr=None, is_mono=True, progress_callback=None):
+    """
+    以一次性完整載入並切分的方式處理大型音訊檔案，並在每個切片同時產出多種頻譜圖。
+    """
+    import soundfile as sf
+    all_results = {g['id']: [] for g in group_defs}
+    basename = f"{os.path.splitext(os.path.basename(filepath))[0]}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
+    try:
+        try:
+            info = sf.info(filepath)
+            original_sr = info.samplerate
+            total_samples = info.frames
+        except Exception as e:
+            print(f"SoundFile 無法讀取 {filepath}，嘗試使用 Librosa Fallback。錯誤: {e}")
+            original_sr = librosa.get_samplerate(filepath)
+            total_duration = librosa.get_duration(path=filepath)
+            total_samples = int(total_duration * original_sr)
+
+        sr = target_sr if target_sr else original_sr
+
+        print(f"[群組處理] 正在完整載入音訊: {filepath} ({total_samples} samples)")
+        full_audio, _ = librosa.load(filepath, sr=sr, mono=is_mono)
+        print("[群組處理] 音訊載入完成。")
+
+        frame_length = int(segment_duration * sr)
+        actual_total_samples = full_audio.shape[-1]
+
+        if actual_total_samples < frame_length:
+            print("警告：音訊檔案總長度小於設定的單一片段長度。")
+            y_segment = full_audio
+            pad_width = [(0, 0)] * y_segment.ndim
+            pad_width[-1] = (0, frame_length - actual_total_samples)
+            y_segment = np.pad(y_segment, pad_width)
+            segments_to_process = [(0, 0.0, y_segment)]
+        else:
+            step_samples = int(frame_length * (1 - overlap_ratio))
+            segments_to_process = []
+            start_sample = 0
+            idx = 0
+            while start_sample <= actual_total_samples - frame_length:
+                start_s = start_sample / sr
+                y_segment = full_audio[..., start_sample:start_sample + frame_length]
+                segments_to_process.append((idx, start_s, y_segment))
+                start_sample += step_samples
+                idx += 1
+
+        total_segments = len(segments_to_process)
+        completed_tasks = 0
+        
+        print(f"[群組處理] 開始平行處理 {total_segments} 個音訊片段...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as executor:
+            futures = {}
+            for idx, start_s, y_seg in segments_to_process:
+                fut = executor.submit(
+                    _process_segment_group, 
+                    idx, start_s, y_seg, sr, basename, group_defs, is_mono
+                )
+                futures[fut] = idx
+                
+            # 依序回收結果，使用 list 來固定順序
+            # 建立一個佔位用的字典
+            ordered_results = {g['id']: [None] * total_segments for g in group_defs}
+                
+            for fut in concurrent.futures.as_completed(futures):
+                idx = futures[fut]
+                try:
+                    res_dict = fut.result()
+                    for gid, res in res_dict.items():
+                        ordered_results[gid][idx] = res
+                    completed_tasks += 1
+                    if progress_callback:
+                        progress_callback(completed_tasks, total_segments)
+                except Exception as exc:
+                    print(f"片段 {idx} 處理發生錯誤: {exc}")
+                    
+        # 移除 None
+        for gid in ordered_results:
+            all_results[gid] = [r for r in ordered_results[gid] if r is not None]
+            
+        del full_audio
+        gc.collect()
+        
+    except Exception as e:
+        print(f"處理大型音訊檔案群組時發生錯誤: {e}")
         raise e
         
     return all_results

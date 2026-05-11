@@ -151,3 +151,165 @@ class AudioService:
         finally:
             # 任務結束時清理 session
             db.session.remove()
+
+    @staticmethod
+    def process_audio_group(audio_ids):
+        """
+        處理一組共用同一個實體檔案的音訊任務。
+        """
+        from ..audio_utils import process_large_audio_group
+        
+        db.session.remove()
+        db.engine.dispose()
+        
+        if not audio_ids:
+            return
+            
+        try:
+            # 取出所有任務資料
+            results = []
+            for aid in audio_ids:
+                row = db.session.execute(
+                    db.text("SELECT id, file_path, result_path, params, fs FROM audio_info WHERE id = :id"),
+                    {"id": aid}
+                ).fetchone()
+                if row:
+                    results.append(row)
+                    
+            if not results:
+                return
+                
+            # 更新狀態
+            for row in results:
+                db.session.execute(
+                    db.text("UPDATE audio_info SET status = 'PROCESSING', progress = 0 WHERE id = :id"),
+                    {"id": row[0]}
+                )
+            db.session.commit()
+            
+            # 使用第一筆的檔案路徑與基礎參數
+            upload_path = results[0][1]
+            audio_fs = results[0][4]
+            first_params = json.loads(results[0][3]) if results[0][3] else {}
+            
+            segment_duration = float(first_params.get('segment_duration', 2.0))
+            overlap_ratio = float(first_params.get('overlap', 50)) / 100.0
+            is_mono = (first_params.get('channels', 'mono') == 'mono')
+            try:
+                target_sr = int(first_params.get('sample_rate'))
+            except (ValueError, TypeError):
+                target_sr = audio_fs if audio_fs else 44100
+                
+            # 建立群組定義
+            group_defs = []
+            for row in results:
+                aid = row[0]
+                r_path = row[2]
+                params = json.loads(row[3]) if row[3] else {}
+                
+                result_dir = os.path.join(current_app.root_path, 'static', r_path)
+                os.makedirs(result_dir, exist_ok=True)
+                
+                n_fft = int(params.get('n_fft', 1024))
+                window_overlap = float(params.get('window_overlap', 50)) / 100.0
+                hop_length = max(1, int(n_fft * (1 - window_overlap)))
+                
+                spec_params = {
+                    'n_fft': n_fft,
+                    'hop_length': hop_length,
+                    'window_overlap': window_overlap,
+                    'window_type': params.get('window_type', 'hann'),
+                    'n_mels': int(params.get('n_mels', 128)),
+                    'f_min': float(params.get('f_min', 0)),
+                    'f_max': float(params.get('f_max', 0)),
+                    'power': float(params.get('power', 2.0))
+                }
+                
+                group_defs.append({
+                    'id': aid,
+                    'result_dir': result_dir,
+                    'spec_type': params.get('spec_type', 'mel'),
+                    'spec_params': spec_params
+                })
+                
+            # 追蹤進度
+            last_updated_progress = [0]
+
+            def progress_callback(processed_count, total_count):
+                if total_count > 0:
+                    progress = int((processed_count / total_count) * 100)
+                    if progress - last_updated_progress[0] >= 10 or progress == 100:
+                        try:
+                            for aid in audio_ids:
+                                db.session.execute(
+                                    db.text("UPDATE audio_info SET progress = :progress WHERE id = :id"),
+                                    {"progress": progress, "id": aid}
+                                )
+                            db.session.commit()
+                            last_updated_progress[0] = progress
+                        except Exception as e:
+                            db.session.rollback()
+                            print(f"群組進度更新失敗: {e}")
+
+            # 呼叫底層處理
+            results_dict = process_large_audio_group(
+                filepath=upload_path,
+                group_defs=group_defs,
+                segment_duration=segment_duration,
+                overlap_ratio=overlap_ratio,
+                target_sr=target_sr,
+                is_mono=is_mono,
+                progress_callback=progress_callback
+            )
+            
+            frame_length_samples = int(segment_duration * target_sr)
+            hop_length_samples = int(frame_length_samples * (1 - overlap_ratio))
+            
+            # 批次寫入資料庫
+            for aid in audio_ids:
+                res_list = results_dict.get(aid, [])
+                for i, res_item in enumerate(res_list):
+                    new_result = Result(
+                        upload_id=aid,
+                        audio_filename=res_item['audio'],
+                        spectrogram_filename=res_item['display_spectrogram'],
+                        spectrogram_training_filename=res_item['training_spectrogram']
+                    )
+                    db.session.add(new_result)
+
+                    start_sample = i * hop_length_samples
+                    end_sample = start_sample + frame_length_samples
+                    
+                    new_cetacean = CetaceanInfo(
+                        audio_id=aid,
+                        start_sample=start_sample,
+                        end_sample=end_sample,
+                        event_duration=segment_duration,
+                        event_type=0,
+                        detect_type=2
+                    )
+                    db.session.add(new_cetacean)
+                    
+                # 更新狀態為完成
+                db.session.execute(
+                    db.text("UPDATE audio_info SET status = 'COMPLETED', progress = 100 WHERE id = :id"),
+                    {"id": aid}
+                )
+            db.session.commit()
+            
+        except Exception as e:
+            print(f"音訊群組處理任務失敗 (IDs: {audio_ids}): {e}")
+            db.session.rollback()
+            try:
+                for aid in audio_ids:
+                    db.session.execute(
+                        db.text("UPDATE audio_info SET status = 'FAILED' WHERE id = :id"),
+                        {"id": aid}
+                    )
+                db.session.commit()
+            except Exception as rollback_error:
+                print(f"狀態更新失敗: {rollback_error}")
+                db.session.rollback()
+            raise
+        finally:
+            db.session.remove()

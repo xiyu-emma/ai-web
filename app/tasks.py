@@ -13,6 +13,14 @@ def process_audio_task(self, audio_id):
     AudioService.process_audio(audio_id)
 
 
+@celery.task(name='app.tasks.process_audio_group_task', bind=True)
+def process_audio_group_task(self, audio_ids):
+    """
+    背景任務：處理多個共用實體音檔的任務，只需讀取一次音檔即可產出多種頻譜圖。
+    """
+    AudioService.process_audio_group(audio_ids)
+
+
 # --- 任務 2: 模型訓練 ---
 @celery.task(name='app.tasks.train_yolo_model')
 def train_yolo_model(upload_ids, training_run_id, model_name='yolov8n-cls.pt', train_params=None):
