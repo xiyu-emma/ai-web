@@ -303,7 +303,7 @@ to { transform: scale(1); opacity: 1; }
                 <select class="label-select {{ 'labeled' if item.event_type and item.event_type != 0 else '' }}"
                     onchange="updateLabel({{ item.id }}, this)">
                     <option value="0" {{ 'selected' if item.event_type==0 }}>0. 無標籤</option>
-                    <option value="1" {{ 'selected' if item.event_type==1 }}>1. 鯨豚Cetacean</option>
+                    <option value="1" {{ 'selected' if item.event_type==1 }}>1. 鯨豚 (Cetacean)</option>
 
                     <optgroup label="鯨豚聲紋">
                         <option value="10" {{ 'selected' if item.event_type==10 }}>10. 未知聲紋 (Unknown Vocalization)
@@ -371,7 +371,7 @@ to { transform: scale(1); opacity: 1; }
             <select id="modalLabelSelect" class="label-select"
                 style="min-width: 150px; padding: 6px; font-size: 0.9rem;" onchange="updateLabelFromModal(this)">
                 <option value="0">0. 無標籤</option>
-                <option value="1">1. 鯨豚Cetacean</option>
+                <option value="1">1. 鯨豚 (Cetacean)</option>
                 <optgroup label="鯨豚聲紋">
                     <option value="10">10. 未知聲紋 (Unknown Vocalization)</option>
                     <option value="11">11. 上升型 (Upsweep)</option>

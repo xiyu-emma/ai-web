@@ -129,15 +129,15 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
 }
 
 @media print {
-    body { background: white !important; }
-    .container-card { box-shadow: none !important; margin: 0 !important; padding: 0 !important; border: none !important; }
-    .btn, .action-buttons, header, nav, .sidebar { display: none !important; }
-    .chart-box { break-inside: avoid; }
-    details { display: block !important; margin-bottom: 2rem !important; }
-    details > summary { display: none !important; }
-    details .details-content { display: block !important; border: none !important; }
-    .section-title { page-break-after: avoid; }
-    .metrics-grid, .params-grid, .chart-grid { page-break-inside: avoid; }
+body { background: white !important; }
+.container-card { box-shadow: none !important; margin: 0 !important; padding: 0 !important; border: none !important; }
+.btn, .action-buttons, header, nav, .sidebar { display: none !important; }
+.chart-box { break-inside: avoid; }
+details { display: block !important; margin-bottom: 2rem !important; }
+details > summary { display: none !important; }
+details .details-content { display: block !important; border: none !important; }
+.section-title { page-break-after: avoid; }
+.metrics-grid, .params-grid, .chart-grid { page-break-inside: avoid; }
 }
 {% endblock %}
 
@@ -155,7 +155,7 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
                 {% endif %}
             </div>
             <div style="color: var(--text-light);">
-                任務 ID: #{{ run.id }} 
+                任務 ID: #{{ run.id }}
                 | 建立時間: {{ run.timestamp.strftime('%Y-%m-%d %H:%M:%S') if run.timestamp else 'N/A' }}
                 {% if metrics and 'end_time' in metrics %}
                 | 完成時間: {{ metrics.end_time }}
@@ -164,7 +164,8 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
             </div>
         </div>
         <div class="action-buttons" style="display: flex; gap: 0.75rem; align-items: center;">
-            <button onclick="window.print()" class="btn btn-primary" style="background: #10b981; border-color: #10b981;">
+            <button onclick="window.print()" class="btn btn-primary"
+                style="background: #10b981; border-color: #10b981;">
                 <i class="fas fa-file-pdf"></i> 匯出報告 (PDF)
             </button>
             <a href="{{ url_for('static', filename=run.results_path + '/weights/best.pt') }}" class="btn btn-primary"
@@ -207,25 +208,27 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
             <span class="label">損失函數</span>
             <span class="value">
                 {% if params.get('loss_function') == 'focal_loss_multi_class' %}
-                    Multi-class Focal
+                Multi-class Focal
                 {% elif params.get('loss_function') == 'focal_loss_binary' %}
-                    Binary Focal
+                Binary Focal
                 {% elif params.get('use_focal_loss') %}
-                    Focal Loss (舊版)
+                Focal Loss (舊版)
                 {% elif params.get('loss_function') == 'none' %}
-                    Cross Entropy (標準 / 預設)
+                Cross Entropy (標準 / 預設)
                 {% else %}
-                    Cross Entropy
+                Cross Entropy
                 {% endif %}
             </span>
         </div>
         {% endif %}
         {% if total_label_counts %}
-        <div class="param-item" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; background: #ebf8ff; border-color: #bee3f8;">
+        <div class="param-item"
+            style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; background: #ebf8ff; border-color: #bee3f8;">
             <span class="label" style="color: #2b6cb0; font-weight: bold;">訓練標籤總覽</span>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 {% for label_name, count in total_label_counts.items() %}
-                <span style="background: white; color: #2b6cb0; padding: 4px 10px; border-radius: 6px; font-size: 0.9rem; font-weight: 600; border: 1px solid #90cdf4; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <span
+                    style="background: white; color: #2b6cb0; padding: 4px 10px; border-radius: 6px; font-size: 0.9rem; font-weight: 600; border: 1px solid #90cdf4; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                     {{ label_name }}: {{ count }} 筆
                 </span>
                 {% endfor %}
@@ -236,12 +239,17 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
 
     <!-- 訓練音檔列表 -->
     <details style="margin-bottom: 2rem; background: transparent; border-radius: 12px;">
-        <summary class="section-title" style="cursor: pointer; display: flex; align-items: center; user-select: none; margin: 1rem 0; list-style: none; /* 隱藏預設箭頭 */">
-            訓練使用音檔 
-            <span style="font-size: 0.9rem; color: var(--text-light); font-weight: normal; margin-left: 8px;">(共 {{ used_audios|length }} 筆)</span>
-            <span style="margin-left: auto; font-size: 0.9rem; color: var(--primary-med); background: #e0f2fe; padding: 4px 10px; border-radius: 6px;">點擊展開 / 收合</span>
+        <summary class="section-title"
+            style="cursor: pointer; display: flex; align-items: center; user-select: none; margin: 1rem 0; list-style: none; /* 隱藏預設箭頭 */">
+            訓練使用音檔
+            <span style="font-size: 0.9rem; color: var(--text-light); font-weight: normal; margin-left: 8px;">(共 {{
+                used_audios|length }} 筆)</span>
+            <span
+                style="margin-left: auto; font-size: 0.9rem; color: var(--primary-med); background: #e0f2fe; padding: 4px 10px; border-radius: 6px;">點擊展開
+                / 收合</span>
         </summary>
-        <div class="details-content" style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; margin-top: 1rem;">
+        <div class="details-content"
+            style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; margin-top: 1rem;">
             {% if used_audios %}
             <table class="data-table" style="margin: 0; box-shadow: none;">
                 <thead>
@@ -259,23 +267,26 @@ box-shadow: 0 10px 20px rgba(0,0,0,0.1);
                             {{ audio.file_name }}
                         </td>
                         <td style="color: var(--text-light);">
-                            {{ "%.1f"|format(audio.calculated_duration) if audio.calculated_duration is not none else '--' }} 秒
+                            {{ "%.1f"|format(audio.calculated_duration) if audio.calculated_duration is not none else
+                            '--' }} 秒
                         </td>
                         <td>
                             {% if audio.label_counts %}
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                                 {% for label_name, count in audio.label_counts.items() %}
-                                    <span style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 500;">
-                                        {{ label_name }}: {{ count }}
-                                    </span>
+                                <span
+                                    style="background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 500;">
+                                    {{ label_name }}: {{ count }}
+                                </span>
                                 {% endfor %}
-                                </div>
+                            </div>
                             {% else %}
-                                <span style="color: #94a3b8; font-size: 0.85rem;">無標記</span>
+                            <span style="color: #94a3b8; font-size: 0.85rem;">無標記</span>
                             {% endif %}
                         </td>
                         <td class="action-buttons" style="text-align: right; padding-right: 1.5rem;">
-                            <a href="{{ url_for('main.results', upload_id=audio.id) }}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.85rem;" target="_blank">
+                            <a href="{{ url_for('main.results', upload_id=audio.id) }}" class="btn btn-secondary"
+                                style="padding: 4px 10px; font-size: 0.85rem;" target="_blank">
                                 查看分析 &rarr;
                             </a>
                         </td>

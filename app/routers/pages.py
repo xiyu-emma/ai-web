@@ -29,7 +29,7 @@ def history():
     
     DEFAULT_LABEL_MAP = {
         0: '0. 無標籤',
-        1: '1. 鯨豚Cetacean',
+        1: '1. 鯨豚 (Cetacean)',
         10: '10. 上升型 (Upsweep)',
         11: '11. 下降型 (Downsweep)',
         12: '12. U型 (Concave)',
@@ -132,7 +132,7 @@ def labeling_page(upload_id):
 
     DEFAULT_LABEL_MAP = {
         0: '0. 無標籤',
-        1: '1. 鯨豚Cetacean',
+        1: '1. 鯨豚 (Cetacean)',
         10: '10. 未知聲紋 (Unknown Vocalization)',
         11: '11. 上升型 (Upsweep)',
         12: '12. 下降型 (Downsweep)',

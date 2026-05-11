@@ -76,14 +76,14 @@
         </div>
 
         <div class="form-group">
-            <label for="spec_type">頻譜圖類型</label>
-            <select id="spec_type" name="spec_type">
-                <option value="log_mel">Log Mel Spectrogram</option>
-                <option value="linear_mel">Linear Mel Spectrogram</option>
-                <option value="stft">STFT (短時距傅立葉)</option>
-                <option value="classic_demon">DEMON 二維頻譜圖</option>
-                <option value="envelope_spectrum">包絡線頻譜分析</option>
-            </select>
+            <label>頻譜圖類型 (可複選)</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 0.5rem;" id="specTypeCheckboxes">
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;"><input type="checkbox" name="spec_type" value="log_mel" checked> Log Mel</label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;"><input type="checkbox" name="spec_type" value="linear_mel"> Linear Mel</label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;"><input type="checkbox" name="spec_type" value="stft"> STFT</label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;"><input type="checkbox" name="spec_type" value="classic_demon"> DEMON</label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;"><input type="checkbox" name="spec_type" value="envelope_spectrum"> 包絡線</label>
+            </div>
         </div>
 
         <!-- 頻譜圖進階參數設定 -->
@@ -305,7 +305,6 @@
 
     // 根據頻譜類型動態顯示/隱藏相關參數
     document.addEventListener('DOMContentLoaded', function () {
-        const specTypeSelect = document.getElementById('spec_type');
         const paramsSection = document.getElementById('specParamsSection');
         const paramsDescription = document.getElementById('paramsDescription');
         const paramRows = document.querySelectorAll('.param-row');
@@ -313,17 +312,24 @@
         const paramItems = document.querySelectorAll('.form-group[data-spec-types]');
 
         function updateParamsVisibility() {
-            const specType = specTypeSelect.value;
+            const checkboxes = document.querySelectorAll('input[name="spec_type"]:checked');
+            const selectedTypes = Array.from(checkboxes).map(cb => cb.value);
 
             // 更新說明文字
-            paramsDescription.textContent = specTypeDescriptions[specType] || specTypeDescriptions['mel'];
+            if (selectedTypes.length === 0) {
+                 paramsDescription.textContent = "請至少選擇一種頻譜圖類型。";
+            } else if (selectedTypes.length === 1) {
+                 paramsDescription.textContent = specTypeDescriptions[selectedTypes[0]] || specTypeDescriptions['log_mel'];
+            } else {
+                 paramsDescription.textContent = "您選擇了多種頻譜圖類型，請針對適用的類型設定進階參數。";
+            }
 
             // 更新參數列的可見性
             paramRows.forEach(row => {
                 const allowedTypes = row.getAttribute('data-spec-types');
                 if (allowedTypes) {
                     const types = allowedTypes.split(',');
-                    const shouldShow = types.includes(specType);
+                    const shouldShow = types.some(t => selectedTypes.includes(t));
                     row.style.display = shouldShow ? '' : 'none';
                 }
             });
@@ -333,14 +339,15 @@
                 const allowedTypes = item.getAttribute('data-spec-types');
                 if (allowedTypes) {
                     const types = allowedTypes.split(',');
-                    const shouldShow = types.includes(specType);
+                    const shouldShow = types.some(t => selectedTypes.includes(t));
                     // 徹底隱藏，不保留空間
                     item.style.display = shouldShow ? 'block' : 'none';
                 }
             });
         }
 
-        specTypeSelect.addEventListener('change', updateParamsVisibility);
+        const specCheckboxes = document.querySelectorAll('input[name="spec_type"]');
+        specCheckboxes.forEach(cb => cb.addEventListener('change', updateParamsVisibility));
         updateParamsVisibility();
 
         // --- 檔案上傳：多檔案選擇預覽 ---
@@ -381,6 +388,13 @@
 
         // 表單提交前驗證
         form.addEventListener('submit', function (e) {
+            const checkedTypes = document.querySelectorAll('input[name="spec_type"]:checked');
+            if (checkedTypes.length === 0) {
+                e.preventDefault();
+                alert('請至少選擇一種頻譜圖類型');
+                return false;
+            }
+
             if (currentUploadMode === 'folder') {
                 const hiddenInputs = document.querySelectorAll('.hidden-folder-file');
                 if (hiddenInputs.length === 0 || hiddenInputs[0].files.length === 0) {

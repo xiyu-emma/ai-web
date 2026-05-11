@@ -39,6 +39,23 @@
                         <td><strong>#{{ upload.id }}</strong></td>
                         <td>
                             <div style="font-weight: 500;">{{ upload.original_filename }}</div>
+                            <div style="margin-top: 4px;">
+                                {% set p = upload.get_params() %}
+                                {% set stype = p.spec_type %}
+                                {% if stype == 'log_mel' %}
+                                <span style="background: #e0e7ff; color: #4338ca; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">Log Mel</span>
+                                {% elif stype == 'linear_mel' %}
+                                <span style="background: #dcfce7; color: #15803d; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">Linear Mel</span>
+                                {% elif stype == 'stft' %}
+                                <span style="background: #ffedd5; color: #c2410c; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">STFT</span>
+                                {% elif stype == 'classic_demon' %}
+                                <span style="background: #f3e8ff; color: #7e22ce; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">DEMON</span>
+                                {% elif stype == 'envelope_spectrum' %}
+                                <span style="background: #ffe4e6; color: #be123c; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">包絡線</span>
+                                {% elif stype %}
+                                <span style="background: #f1f5f9; color: #475569; padding: 3px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">{{ stype }}</span>
+                                {% endif %}
+                            </div>
                         </td>
                         <td class="status-cell">
                             {% if upload.status == 'PROCESSING' %}
@@ -68,7 +85,7 @@
                             {% else %}
                             {% set p = upload.get_params() %}
                             <small style="color: #666;">
-                                {{ p.spec_type }} | {{ p.segment_duration }}s | ov: {{ p.overlap }}%
+                                {{ p.segment_duration }}s | ov: {{ p.overlap }}%
                             </small>
                             {% endif %}
                         </td>

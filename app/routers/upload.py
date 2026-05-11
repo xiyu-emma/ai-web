@@ -19,8 +19,11 @@ def upload():
         return redirect(url_for('main.index'))
     
     try:
+        spec_types = request.form.getlist('spec_type')
+        if not spec_types:
+            spec_types = ['log_mel']
+            
         params_dict = {
-            'spec_type': request.form['spec_type'],
             'segment_duration': float(request.form['segment_duration']),
             'overlap': float(request.form['overlap']),
             'sample_rate': request.form.get('sample_rate', 'None'),
@@ -38,40 +41,46 @@ def upload():
         print(f"上傳參數解析錯誤: {e}")
         return "參數錯誤", 400
 
-    params_json = json.dumps(params_dict)
     default_point = PointInfo.query.first()
     point_id = default_point.id if default_point else None
     
     uploaded_ids = []
+    import uuid
     
     for file in files:
         if file and file.filename != '':
             filename = secure_filename(file.filename)
             file_ext = os.path.splitext(filename)[1].lower().replace('.', '')
             
-            new_audio = AudioInfo(
-                file_name=filename, file_path="pending", file_type=file_ext,
-                result_path="pending", params=params_json, status='PENDING', point_id=point_id
-            )
-            db.session.add(new_audio)
-            db.session.commit()
+            # 建立共用的音檔 (只儲存一次)
+            unique_id = str(uuid.uuid4())[:8]
+            shared_upload_filename = f"{unique_id}_{filename}"
+            shared_upload_path_absolute = os.path.join(current_app.root_path, current_app.config['UPLOAD_FOLDER'], shared_upload_filename)
+            file.save(shared_upload_path_absolute)
             
-            upload_id = new_audio.id
-            result_dir_relative = os.path.join('results', str(upload_id))
-            result_dir_absolute = os.path.join(current_app.root_path, 'static', result_dir_relative)
-            os.makedirs(result_dir_absolute, exist_ok=True)
-            
-            upload_filename = f"{upload_id}_{filename}"
-            upload_path_absolute = os.path.join(current_app.root_path, current_app.config['UPLOAD_FOLDER'], upload_filename)
-            file.save(upload_path_absolute)
-            
-            new_audio.file_path = upload_path_absolute
-            new_audio.result_path = result_dir_relative
-            db.session.commit()
-            
-            # 派送 Celery 任務 - 自動排隊處理
-            celery.send_task('app.tasks.process_audio_task', args=[upload_id])
-            uploaded_ids.append(upload_id)
+            for stype in spec_types:
+                stype_params = params_dict.copy()
+                stype_params['spec_type'] = stype
+                params_json = json.dumps(stype_params)
+                
+                new_audio = AudioInfo(
+                    file_name=filename, file_path=shared_upload_path_absolute, file_type=file_ext,
+                    result_path="pending", params=params_json, status='PENDING', point_id=point_id
+                )
+                db.session.add(new_audio)
+                db.session.commit()
+                
+                upload_id = new_audio.id
+                result_dir_relative = os.path.join('results', str(upload_id))
+                result_dir_absolute = os.path.join(current_app.root_path, 'static', result_dir_relative)
+                os.makedirs(result_dir_absolute, exist_ok=True)
+                
+                new_audio.result_path = result_dir_relative
+                db.session.commit()
+                
+                # 派送 Celery 任務 - 自動排隊處理
+                celery.send_task('app.tasks.process_audio_task', args=[upload_id])
+                uploaded_ids.append(upload_id)
     
     if uploaded_ids:
         # 導向歷史頁面，顯示第一筆新上傳的檔案
@@ -88,7 +97,16 @@ def delete_selected_uploads():
     for u in uploads:
         path = os.path.join(current_app.root_path, 'static', u.result_path)
         if os.path.exists(path): shutil.rmtree(path, ignore_errors=True)
-        if u.file_path and os.path.exists(u.file_path): os.remove(u.file_path)
+        
+        # 檢查是否還有其他紀錄使用相同的音檔
+        if u.file_path and os.path.exists(u.file_path):
+            other_users = AudioInfo.query.filter(AudioInfo.file_path == u.file_path, AudioInfo.id.notin_(upload_ids)).first()
+            if not other_users:
+                try:
+                    os.remove(u.file_path)
+                except OSError:
+                    pass
+                    
         db.session.delete(u)
     db.session.commit()
     return redirect(url_for('main.history'))
@@ -158,96 +176,92 @@ def import_excel():
                     new_label = str(row[label_col]).strip()
                     original_audio = str(row.get('original_audio', '')).strip()
                     
-                    try:
-                        new_event_type = int(new_label)
-                    except ValueError:
-                        # 支援大小寫不敏感，以及中文對應
-                        NAME_TO_EVENT_TYPE_EXTENDED = {
-                            "unlabeled": 0, "whale": 1, "unknown vocalization": 10, "upsweep": 11,
-                            "downsweep": 12, "concave": 13, "convex": 14, "sine": 15, "click": 16,
-                            "burst": 17, "constant": 18, "noise": 90, "ship": 91, "piling": 92,
-                            "未知": 0, "無標記": 0, "鯨豚Cetacean": 1, "鯨魚": 1, "未知發聲": 10, "上升型": 11,
-                            "下降型": 12, "u型": 13, "倒u型": 14, "sin型": 15, "嘎搭聲": 16,
-                            "突發脈衝聲": 17, "常數型": 18, "環境噪音": 90, "船舶": 91, "風機打樁": 92
-                        }
-                        new_event_type = NAME_TO_EVENT_TYPE_EXTENDED.get(new_label.lower(), 0)
-                        
+                    new_event_type = 0
+                    # 嘗試從標籤中提取前面的數字 (例如 "1 鯨豚(Cetacean)" -> 1)
+                    match_num = re.match(r'^(\d+)', str(new_label).strip())
+                    if match_num:
+                        new_event_type = int(match_num.group(1))
+                    else:
+                        try:
+                            new_event_type = int(new_label)
+                        except ValueError:
+                            # 支援大小寫不敏感，以及中文對應
+                            NAME_TO_EVENT_TYPE_EXTENDED = {
+                                "unlabeled": 0, "cetacean": 1, "unknown vocalization": 10, "upsweep": 11,
+                                "downsweep": 12, "concave": 13, "convex": 14, "sine": 15, "click": 16,
+                                "burst": 17, "constant": 18, "noise": 90, "ship": 91, "piling": 92,
+                                "未知": 0, "無標記": 0, "鯨豚": 1, "未知發聲": 10, "上升型": 11,
+                                "下降型": 12, "u型": 13, "倒u型": 14, "sin型": 15, "嘎搭聲": 16,
+                                "突發脈衝聲": 17, "常數型": 18, "環境噪音": 90, "船舶": 91, "風機打樁": 92
+                            }
+                            new_event_type = NAME_TO_EVENT_TYPE_EXTENDED.get(str(new_label).lower().strip(), 0)
+
                     new_bbox_label = EVENT_TYPE_TO_STR.get(new_event_type, "unknown")
                     
-                    # 使用使用者的邏輯: 檔名第一個數字代表 upload_id，最後一個數字代表切片編號
-                    name_without_ext = os.path.splitext(csv_filename)[0]
-                    numbers = re.findall(r'\d+', name_without_ext)
-                    
                     processed = False
-                    if len(numbers) >= 2:
-                        u_id = int(numbers[0])
-                        r_idx = int(numbers[-1])
-                        
-                        r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
-                        cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
-                        
-                        if r and cet:
-                            cet.event_type = new_event_type
-                            cet.detect_type = 0
-                                
-                            existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
-                            if existing_bbox:
-                                existing_bbox.label = new_bbox_label
-                            else:
-                                new_box = BBoxAnnotation(
-                                    result_id=r.id,
-                                    label=new_bbox_label,
-                                    x=0.0, y=0.0, width=1.0, height=1.0
-                                )
-                                db.session.add(new_box)
-                            added += 1
-                            processed = True
+                    
+                    # 取出切片編號 idx (CSV 匯出的檔名一定有 _spec_training_{idx})
+                    r_idx = None
+                    idx_match = re.search(r'_spec_training_(\d+)', csv_filename)
+                    if idx_match:
+                        r_idx = int(idx_match.group(1))
+                    else:
+                        # 備用: 取檔名最後一個數字
+                        numbers = re.findall(r'\d+', os.path.splitext(csv_filename)[0])
+                        if numbers:
+                            r_idx = int(numbers[-1])
                             
-                    # 原有邏輯作為安全備用，防止檔名特殊時失效
-                    if not processed:
-                        targets = []
-                        if original_audio and original_audio.lower() != 'nan':
-                            audios = AudioInfo.query.filter_by(file_name=original_audio).all()
-                            for audio in audios:
-                                r = Result.query.filter_by(upload_id=audio.id, spectrogram_training_filename=csv_filename).first()
-                                if r:
-                                    targets.append((r, audio.id, csv_filename))
-                        else:
-                            match = re.search(r'upload_(\d+)_(.+)', csv_filename)
-                            if match:
-                                u_id = match.group(1)
-                                fname = match.group(2)
-                                r = Result.query.filter_by(upload_id=u_id, spectrogram_training_filename=fname).first()
-                                if r:
-                                    targets.append((r, u_id, fname))
-                            else:
-                                r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
-                                for r in r_all:
-                                    targets.append((r, r.upload_id, csv_filename))
+                    if r_idx is not None:
+                        sibling_audios = []
+                        # 策略 1: 透過 original_audio 找 (最準確，因為匯出時有帶這個欄位)
+                        if original_audio and str(original_audio).lower() != 'nan':
+                            sibling_audios = AudioInfo.query.filter_by(file_name=original_audio).all()
                         
-                        for r, u_id, fname in targets:
-                            r_idx_match = re.search(r'_spec_training_(\d+)\.', fname)
-                            if not r_idx_match:
-                                r_idx_match = re.search(r'^(\d+)_', fname)
+                        # 策略 2: 透過檔名前綴的 upload_id 找 (防呆)
+                        if not sibling_audios:
+                            uid_match = re.search(r'^(\d+)_', csv_filename)
+                            if uid_match:
+                                u_id = int(uid_match.group(1))
+                                target_audio = AudioInfo.query.get(u_id)
+                                if target_audio:
+                                    sibling_audios = AudioInfo.query.filter_by(file_path=target_audio.file_path).all()
+                        
+                        for sibling in sibling_audios:
+                            r = Result.query.filter_by(upload_id=sibling.id).order_by(Result.id.asc()).offset(r_idx).first()
+                            cet = CetaceanInfo.query.filter_by(audio_id=sibling.id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
                             
-                            if r_idx_match:
-                                r_idx = int(r_idx_match.group(1))
-                                cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.id.asc()).offset(r_idx).first()
-                                if cet:
-                                    cet.event_type = new_event_type
-                                    cet.detect_type = 0
+                            if r and cet:
+                                cet.event_type = new_event_type
+                                cet.detect_type = 0
                                     
-                                    existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
-                                    if existing_bbox:
-                                        existing_bbox.label = new_bbox_label
-                                    else:
-                                        new_box = BBoxAnnotation(
-                                            result_id=r.id,
-                                            label=new_bbox_label,
-                                            x=0.0, y=0.0, width=1.0, height=1.0
-                                        )
-                                        db.session.add(new_box)
-                                    added += 1
+                                existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                                if existing_bbox:
+                                    existing_bbox.label = new_bbox_label
+                                else:
+                                    new_box = BBoxAnnotation(
+                                        result_id=r.id,
+                                        label=new_bbox_label,
+                                        x=0.0, y=0.0, width=1.0, height=1.0
+                                    )
+                                    db.session.add(new_box)
+                                added += 1
+                                processed = True
+                                
+                    if not processed:
+                        # 終極備用邏輯：直接依據 csv_filename 找那唯一的一筆
+                        r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
+                        for r in r_all:
+                            cet = CetaceanInfo.query.filter_by(audio_id=r.upload_id).order_by(CetaceanInfo.id.asc()).offset(r_idx if r_idx is not None else 0).first()
+                            if cet:
+                                cet.event_type = new_event_type
+                                cet.detect_type = 0
+                                existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                                if existing_bbox:
+                                    existing_bbox.label = new_bbox_label
+                                else:
+                                    new_box = BBoxAnnotation(result_id=r.id, label=new_bbox_label, x=0.0, y=0.0, width=1.0, height=1.0)
+                                    db.session.add(new_box)
+                                added += 1
                 db.session.commit()
                 total_labels_inserted += added
                 success_count += 1

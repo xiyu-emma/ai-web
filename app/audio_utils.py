@@ -248,15 +248,23 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         fig.tight_layout()
         fig.savefig(out_path_display, dpi=100)
         
-        # 2. 清除內容並繪製訓練用圖 (無座標軸純圖)
-        fig.clear()
-        ax = fig.add_subplot(111)
-        freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
-        freq_mask = (freqs >= f_min) & (freqs <= f_max)
-        librosa.display.specshow(display_data[freq_mask, :], sr=sr, ax=ax, hop_length=hop_length, cmap='viridis')
-        ax.axis('off')
-        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
+        # 2. 快速儲存訓練用圖 (直接存 Numpy Array，避開 Matplotlib 繪圖瓶頸)
+        try:
+            import cv2
+            import matplotlib.cm as cm
+            freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+            freq_mask = (freqs >= f_min) & (freqs <= f_max)
+            train_data = display_data[freq_mask, :]
+            
+            d_min = train_data.min()
+            d_max = train_data.max()
+            norm_data = (train_data - d_min) / (d_max - d_min + 1e-8)
+            norm_data = np.flipud(norm_data)
+            colored = cm.viridis(norm_data)
+            img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            cv2.imwrite(out_path_training, img_bgr)
+        except Exception as fast_save_err:
+            print(f"快速儲存 STFT 失敗: {fast_save_err}")
     
     except Exception as e:
         print(f"繪圖失敗 ({spec_type}): {e}")
@@ -313,18 +321,18 @@ def save_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params=No
         fig.tight_layout()
         fig.savefig(out_path_display, dpi=100)
         
-        fig.clear()
-        ax = fig.add_subplot(111)
-        librosa.display.specshow(
-            data_to_plot, 
-            sr=params.sample_rate, 
-            hop_length=hop_length,
-            ax=ax,
-            cmap='viridis'
-        )
-        ax.axis('off')
-        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        fig.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
+        try:
+            import cv2
+            import matplotlib.cm as cm
+            d_min = data_to_plot.min()
+            d_max = data_to_plot.max()
+            norm_data = (data_to_plot - d_min) / (d_max - d_min + 1e-8)
+            norm_data = np.flipud(norm_data)
+            colored = cm.viridis(norm_data)
+            img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            cv2.imwrite(out_path_training, img_bgr)
+        except Exception as fast_save_err:
+            print(f"快速儲存 Log Mel 失敗: {fast_save_err}")
     except Exception as e:
         print(f"繪製 YAMNet Log Mel 頻譜圖時發生錯誤: {e}")
     finally:
@@ -378,18 +386,18 @@ def save_linear_mel_plot(y, sr, out_path_display, out_path_training, spec_params
         fig.tight_layout()
         fig.savefig(out_path_display, dpi=100)
         
-        fig.clear()
-        ax = fig.add_subplot(111)
-        librosa.display.specshow(
-            data_to_plot, 
-            sr=params.sample_rate, 
-            hop_length=hop_length,
-            ax=ax,
-            cmap='viridis'
-        )
-        ax.axis('off')
-        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        fig.savefig(out_path_training, dpi=100, bbox_inches='tight', pad_inches=0)
+        try:
+            import cv2
+            import matplotlib.cm as cm
+            d_min = data_to_plot.min()
+            d_max = data_to_plot.max()
+            norm_data = (data_to_plot - d_min) / (d_max - d_min + 1e-8)
+            norm_data = np.flipud(norm_data)
+            colored = cm.viridis(norm_data)
+            img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            cv2.imwrite(out_path_training, img_bgr)
+        except Exception as fast_save_err:
+            print(f"快速儲存 Linear Mel 失敗: {fast_save_err}")
     except Exception as e:
         print(f"繪製 Linear Mel 頻譜圖時發生錯誤: {e}")
     finally:
@@ -429,13 +437,19 @@ def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, sp
         fig.tight_layout()
         fig.savefig(out_path_display, dpi=100)
         
-        fig.clear()
-        ax = fig.add_subplot(111)
-        ax.pcolormesh(times, freqs, S_db, cmap='viridis', shading='auto')
-        ax.set_ylim(0, params['FREQ_YLIM'])
-        ax.axis('off')
-        fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        fig.savefig(out_path_training, bbox_inches='tight', pad_inches=0, dpi=100)
+        try:
+            import cv2
+            import matplotlib.cm as cm
+            freq_mask = freqs <= params['FREQ_YLIM']
+            train_data = S_db[freq_mask, :]
+            d_min, d_max = train_data.min(), train_data.max()
+            norm_data = (train_data - d_min) / (d_max - d_min + 1e-8)
+            norm_data = np.flipud(norm_data)
+            colored = cm.viridis(norm_data)
+            img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            cv2.imwrite(out_path_training, img_bgr)
+        except Exception as fast_save_err:
+            print(f"快速儲存 DEMON 失敗: {fast_save_err}")
     finally:
         if fig: fig.clf()
 
