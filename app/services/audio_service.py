@@ -138,6 +138,15 @@ class AudioService:
         except Exception as e:
             print(f"音訊處理任務 {audio_id} 失敗: {e}")
             db.session.rollback()
+            # 發生錯誤時清理已建立的殘留檔案，避免硬碟空間洩漏
+            try:
+                import shutil
+                if 'result_dir' in locals() and os.path.exists(result_dir):
+                    shutil.rmtree(result_dir, ignore_errors=True)
+                    print(f"已清理失敗任務的殘留檔案: {result_dir}")
+            except Exception as cleanup_err:
+                print(f"清理殘留檔案失敗: {cleanup_err}")
+                
             try:
                 db.session.execute(
                     db.text("UPDATE audio_info SET status = 'FAILED' WHERE id = :id"),
@@ -300,6 +309,18 @@ class AudioService:
         except Exception as e:
             print(f"音訊群組處理任務失敗 (IDs: {audio_ids}): {e}")
             db.session.rollback()
+            # 發生錯誤時清理已建立的殘留檔案，避免硬碟空間洩漏
+            try:
+                import shutil
+                if 'group_defs' in locals():
+                    for gdef in group_defs:
+                        r_dir = gdef.get('result_dir')
+                        if r_dir and os.path.exists(r_dir):
+                            shutil.rmtree(r_dir, ignore_errors=True)
+                    print(f"已清理群組任務失敗的殘留檔案")
+            except Exception as cleanup_err:
+                print(f"清理殘留檔案失敗: {cleanup_err}")
+                
             try:
                 for aid in audio_ids:
                     db.session.execute(
