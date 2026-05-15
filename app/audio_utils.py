@@ -292,6 +292,7 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
             norm_data = np.flipud(norm_data)
             colored = cm.viridis(norm_data)
             img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            img_bgr = cv2.resize(img_bgr, (969, 370), interpolation=cv2.INTER_CUBIC)
             cv2.imwrite(out_path_training, img_bgr)
         except Exception as fast_save_err:
             print(f"快速儲存 STFT 失敗: {fast_save_err}")
@@ -360,6 +361,7 @@ def save_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params=No
             norm_data = np.flipud(norm_data)
             colored = cm.viridis(norm_data)
             img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            img_bgr = cv2.resize(img_bgr, (969, 370), interpolation=cv2.INTER_CUBIC)
             cv2.imwrite(out_path_training, img_bgr)
         except Exception as fast_save_err:
             print(f"快速儲存 Log Mel 失敗: {fast_save_err}")
@@ -425,6 +427,7 @@ def save_linear_mel_plot(y, sr, out_path_display, out_path_training, spec_params
             norm_data = np.flipud(norm_data)
             colored = cm.viridis(norm_data)
             img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            img_bgr = cv2.resize(img_bgr, (969, 370), interpolation=cv2.INTER_CUBIC)
             cv2.imwrite(out_path_training, img_bgr)
         except Exception as fast_save_err:
             print(f"快速儲存 Linear Mel 失敗: {fast_save_err}")
@@ -477,6 +480,8 @@ def save_classic_demon_plot(segment, sr, out_path_display, out_path_training, sp
             norm_data = np.flipud(norm_data)
             colored = cm.viridis(norm_data)
             img_bgr = (colored[:, :, :3][:, :, ::-1] * 255).astype(np.uint8)
+            # DEMON 圖比例原為 6x4，對應約 600x400，但為統一訓練尺寸，亦調整為 969x370
+            img_bgr = cv2.resize(img_bgr, (969, 370), interpolation=cv2.INTER_CUBIC)
             cv2.imwrite(out_path_training, img_bgr)
         except Exception as fast_save_err:
             print(f"快速儲存 DEMON 失敗: {fast_save_err}")

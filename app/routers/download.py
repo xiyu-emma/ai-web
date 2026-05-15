@@ -47,11 +47,12 @@ def download_dataset_zip(upload_id):
                     arcname = file
                     should_include = False
                     
+                    spec_type = upload.get_params().get('spec_type', 'unknown')
                     if filename_lower.endswith(('.wav', '.mp3')):
-                        arcname = f"audio/{file}"
+                        arcname = f"audio/{spec_type}-{file}"
                         should_include = True
                     elif filename_lower.endswith(('.png', '.jpg')) and '_spec_training_' in filename_lower:
-                        arcname = f"images/{file}"
+                        arcname = f"images/{spec_type}-{file}"
                         should_include = True
                     
                     if should_include:
@@ -66,7 +67,8 @@ def download_dataset_zip(upload_id):
             
             for i, (res, cet) in enumerate(zip(results_all, cetaceans_all)):
                 fname = res.spectrogram_training_filename
-                csv_filename = f"images/{fname}"
+                spec_type = upload.get_params().get('spec_type', 'unknown')
+                csv_filename = f"images/{spec_type}-{fname}"
                 etype = cet.event_type
                 label_name = label_map.get(etype, 'Unknown') if etype else 'Unknown'
                 
@@ -127,7 +129,8 @@ def download_dataset_zip(upload_id):
                 
                 if annotations:
                     fname = res.spectrogram_training_filename
-                    csv_filename = f"images/{fname}"
+                    spec_type = upload.get_params().get('spec_type', 'unknown')
+                    csv_filename = f"images/{spec_type}-{fname}"
                     segment_start_time = i * hop_length
                     
                     for bbox in annotations:
@@ -272,11 +275,12 @@ def download_multiple_datasets_zip():
                         filename_lower = file.lower()
                         should_include = False
                         
+                        spec_type = upload.get_params().get('spec_type', 'unknown')
                         if export_audio and filename_lower.endswith(('.wav', '.mp3')):
-                            arcname = f"audio/{file}"
+                            arcname = f"audio/{spec_type}-{file}"
                             should_include = True
                         elif export_images and filename_lower.endswith(('.png', '.jpg')) and '_spec_training_' in filename_lower:
-                            arcname = f"images/{file}"
+                            arcname = f"images/{spec_type}-{file}"
                             should_include = True
                         
                         if should_include:
@@ -285,7 +289,9 @@ def download_multiple_datasets_zip():
                 # B. 生成該檔案的 labels.csv 內容
                 if export_csv:
                     for i, (res, cet) in enumerate(zip(results_all, cetaceans_all)):
-                        csv_filename = res.spectrogram_training_filename
+                        fname = res.spectrogram_training_filename
+                        spec_type = upload.get_params().get('spec_type', 'unknown')
+                        csv_filename = f"{spec_type}-{fname}"
                         etype = cet.event_type
                         label_name = USER_LABEL_MAP_INT.get(etype, "Unlabeled") if etype is not None else "Unlabeled"
                         
@@ -329,7 +335,9 @@ def download_multiple_datasets_zip():
                     for i, res in enumerate(results_all):
                         annotations = BBoxAnnotation.query.filter_by(result_id=res.id).all()
                         if annotations:
-                            csv_filename = res.spectrogram_training_filename
+                            fname = res.spectrogram_training_filename
+                            spec_type = upload.get_params().get('spec_type', 'unknown')
+                            csv_filename = f"{spec_type}-{fname}"
                             segment_start_time = i * hop_length
                             
                             for bbox in annotations:

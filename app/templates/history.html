@@ -30,6 +30,36 @@
                         <th>參數摘要 / 標記數據</th>
                         <th>操作</th>
                     </tr>
+                    <tr style="background-color: #f8fafc;">
+                        <th></th>
+                        <th></th>
+                        <th>
+                            <div style="display: flex; flex-direction: column; gap: 4px; padding-right: 10px;">
+                                <input type="text" id="filter-filename" onkeyup="applyFilters()" placeholder="搜尋檔名..." style="padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; width: 100%;">
+                                <select id="filter-spectype" onchange="applyFilters()" style="padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; width: 100%;">
+                                    <option value="">所有頻譜圖</option>
+                                    <option value="Log Mel">Log Mel</option>
+                                    <option value="Linear Mel">Linear Mel</option>
+                                    <option value="STFT">STFT</option>
+                                    <option value="DEMON">DEMON</option>
+                                    <option value="包絡線">包絡線</option>
+                                </select>
+                            </div>
+                        </th>
+                        <th>
+                            <select id="filter-status" onchange="applyFilters()" style="padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; width: 100%; max-width: 120px;">
+                                <option value="">所有狀態</option>
+                                <option value="COMPLETED">COMPLETED</option>
+                                <option value="PROCESSING">PROCESSING</option>
+                                <option value="FAILED">FAILED</option>
+                            </select>
+                        </th>
+                        <th>
+                            <input type="date" id="filter-date" onchange="applyFilters()" style="padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; width: 100%; max-width: 140px;">
+                        </th>
+                        <th></th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
                     {% for upload in uploads %}
@@ -328,12 +358,81 @@
 <div id="data-config" data-new-upload-id="{{ request.args.get('new_upload_id') }}"></div>
 
 <script>
-    // 全選/取消全選
+    // 篩選功能
+    function applyFilters() {
+        const filenameFilter = document.getElementById('filter-filename').value.toLowerCase();
+        const specTypeFilter = document.getElementById('filter-spectype').value;
+        const statusFilter = document.getElementById('filter-status').value;
+        const dateFilter = document.getElementById('filter-date').value;
+
+        const rows = document.querySelectorAll('tbody tr[id^="upload-row-"]');
+        
+        rows.forEach(row => {
+            let showRow = true;
+            
+            // 檔名與頻譜圖類型過濾 (在第三個欄位)
+            const filenameElement = row.querySelector('td:nth-child(3) div:first-child');
+            if (filenameElement) {
+                const filename = filenameElement.textContent.toLowerCase();
+                if (filenameFilter && !filename.includes(filenameFilter)) {
+                    showRow = false;
+                }
+            }
+
+            const specElement = row.querySelector('td:nth-child(3) span');
+            if (specTypeFilter) {
+                if (!specElement || !specElement.textContent.includes(specTypeFilter)) {
+                    showRow = false;
+                }
+            }
+
+            // 狀態過濾 (在第四個欄位)
+            const statusCell = row.querySelector('td:nth-child(4)');
+            if (statusFilter && statusCell) {
+                const statusText = statusCell.textContent.trim();
+                if (statusFilter === 'PROCESSING') {
+                    if (!statusText.includes('PROCESSING') && !statusText.includes('PENDING') && !statusCell.querySelector('.progress-bar')) {
+                        showRow = false;
+                    }
+                } else {
+                    if (!statusText.includes(statusFilter)) {
+                        showRow = false;
+                    }
+                }
+            }
+
+            // 日期過濾 (在第五個欄位)
+            const dateCell = row.querySelector('td:nth-child(5)');
+            if (dateFilter && dateCell) {
+                const dateText = dateCell.textContent.trim();
+                if (!dateText.startsWith(dateFilter)) {
+                    showRow = false;
+                }
+            }
+
+            row.style.display = showRow ? '' : 'none';
+            
+            // 如果列被隱藏，取消勾選狀態以避免誤動作
+            if (!showRow) {
+                const checkbox = row.querySelector('.upload-checkbox');
+                if (checkbox) checkbox.checked = false;
+            }
+        });
+        
+        // 檢查是否需要取消「全選」核取方塊
+        const selectAllCheckbox = document.querySelector('thead input[type="checkbox"]');
+        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+    }
+
+    // 全選/取消全選 (僅對目前顯示的列作用)
     function toggleAll(source) {
-        const checkboxes = document.getElementsByClassName('upload-checkbox');
-        for (let i = 0; i < checkboxes.length; i++) {
-            checkboxes[i].checked = source.checked;
-        }
+        const rows = document.querySelectorAll('tbody tr[id^="upload-row-"]');
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const cb = row.querySelector('.upload-checkbox');
+                if (cb) cb.checked = source.checked;
+            }
+        });
     }
 
     // 取得已選取的 ID
