@@ -66,7 +66,35 @@ services:
     build: .
     restart: always
     shm_size: '12g'
-    command: celery -A app.celery worker --loglevel=info --pool=threads --concurrency=3
+    command: celery -A app.celery worker --loglevel=info --pool=threads --concurrency=3 -Q celery
+    volumes:
+      - ./app:/code/app
+    environment:
+      PYTHONPATH: "/code"
+      DATABASE_URL: "mysql+pymysql://user:password@db/audio_db"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      TZ: "Asia/Taipei"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "all"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  training_worker:
+    build: .
+    restart: always
+    shm_size: '12g'
+    command: celery -A app.celery worker --loglevel=info --pool=threads --concurrency=1 -Q training
     volumes:
       - ./app:/code/app
     environment:

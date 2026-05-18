@@ -53,7 +53,7 @@ def start_training():
             task_name = 'app.tasks.train_cnn_model'
             model_name = model_type
         
-        celery.send_task(task_name, args=[upload_ids, run.id, model_name, train_params])
+        celery.send_task(task_name, args=[upload_ids, run.id, model_name, train_params], queue='training')
         return redirect(url_for('main.training_status', new_run_id=run.id))
     
     return redirect(url_for('main.history'))

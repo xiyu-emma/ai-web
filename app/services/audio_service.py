@@ -36,6 +36,21 @@ class AudioService:
                 db.text("UPDATE audio_info SET status = 'PROCESSING', progress = 0 WHERE id = :id"),
                 {"id": audio_id}
             )
+            
+            # 清理可能的舊紀錄 (確保冪等性，防止重複切割)
+            old_results = db.session.execute(
+                db.text("SELECT id FROM results WHERE upload_id = :id"), 
+                {"id": audio_id}
+            ).fetchall()
+            
+            if old_results:
+                result_ids = [str(r[0]) for r in old_results]
+                db.session.execute(
+                    db.text(f"DELETE FROM bbox_annotations WHERE result_id IN ({','.join(result_ids)})")
+                )
+                
+            db.session.execute(db.text("DELETE FROM results WHERE upload_id = :id"), {"id": audio_id})
+            db.session.execute(db.text("DELETE FROM cetacean_info WHERE audio_id = :id"), {"id": audio_id})
             db.session.commit()
 
             result_dir = os.path.join(current_app.root_path, 'static', result_path)
@@ -188,12 +203,28 @@ class AudioService:
             if not results:
                 return
                 
-            # 更新狀態
+            # 更新狀態與清理可能的舊紀錄 (確保冪等性，防止重複切割)
             for row in results:
+                aid = row[0]
                 db.session.execute(
                     db.text("UPDATE audio_info SET status = 'PROCESSING', progress = 0 WHERE id = :id"),
-                    {"id": row[0]}
+                    {"id": aid}
                 )
+                
+                old_results = db.session.execute(
+                    db.text("SELECT id FROM results WHERE upload_id = :id"), 
+                    {"id": aid}
+                ).fetchall()
+                
+                if old_results:
+                    result_ids = [str(r[0]) for r in old_results]
+                    db.session.execute(
+                        db.text(f"DELETE FROM bbox_annotations WHERE result_id IN ({','.join(result_ids)})")
+                    )
+                
+                db.session.execute(db.text("DELETE FROM results WHERE upload_id = :id"), {"id": aid})
+                db.session.execute(db.text("DELETE FROM cetacean_info WHERE audio_id = :id"), {"id": aid})
+                
             db.session.commit()
             
             # 使用第一筆的檔案路徑與基礎參數
