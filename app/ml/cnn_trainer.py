@@ -335,6 +335,28 @@ class CnnTrainer:
                     all_preds.extend(predicted.cpu().numpy())
                     all_labels.extend(labels.numpy())
             
+            # 寫入混淆矩陣詳細結果到 CSV 檔案
+            import csv
+            confusion_csv_path = os.path.join(train_results_dir, 'confusion_matrix_results.csv')
+            try:
+                with open(confusion_csv_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['filename', 'true_label', 'predicted_label', 'correct'])
+                    for idx, (img_path, true_label_idx) in enumerate(val_dataset.samples):
+                        filename = os.path.basename(img_path)
+                        true_label_name = class_names[true_label_idx]
+                        pred_label_idx = all_preds[idx]
+                        pred_label_name = class_names[pred_label_idx]
+                        writer.writerow([
+                            filename,
+                            true_label_name,
+                            pred_label_name,
+                            'Yes' if true_label_idx == pred_label_idx else 'No'
+                        ])
+                print(f"[CNN 訓練] 成功寫入混淆矩陣詳細 CSV: {confusion_csv_path}")
+            except Exception as csv_e:
+                print(f"[CNN 訓練] 寫入 confusion_matrix_results.csv 失敗: {csv_e}")
+            
             # 計算每類別指標
             precision, recall, f1, support = precision_recall_fscore_support(
                 all_labels, all_preds, average=None, zero_division=0

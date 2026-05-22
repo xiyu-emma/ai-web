@@ -637,7 +637,10 @@
                     let max = Math.max(start, end);
 
                     for (let i = min; i <= max; i++) {
-                        uploadCheckboxes[i].checked = isChecked;
+                        let row = uploadCheckboxes[i].closest('tr');
+                        if (!row || row.style.display !== 'none') {
+                            uploadCheckboxes[i].checked = isChecked;
+                        }
                     }
                 }
                 lastCheckedUpload = this;

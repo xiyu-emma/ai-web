@@ -223,7 +223,12 @@ def import_excel():
                         
                         # 策略 2: 透過檔名前綴的 upload_id 找 (防呆)
                         if not sibling_audios:
-                            uid_match = re.search(r'^(\d+)_', csv_filename)
+                            # 優先尋找含有頻譜前綴後的 upload_id (例如 log_mel-0_spec_training_0.png)
+                            uid_match = re.search(r'-(\d+)_', csv_filename)
+                            if not uid_match:
+                                # 沒有前綴時，尋找開頭為數字的 upload_id (例如 0_spec_training_0.png)
+                                uid_match = re.search(r'^(\d+)_', csv_filename)
+                                
                             if uid_match:
                                 u_id = int(uid_match.group(1))
                                 target_audio = AudioInfo.query.get(u_id)
@@ -252,8 +257,11 @@ def import_excel():
                                 processed = True
                                 
                     if not processed:
-                        # 終極備用邏輯：直接依據 csv_filename 找那唯一的一筆
-                        r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
+                        # 終極備用邏輯：直接依據去除了頻譜前綴的原本檔名找那唯一的一筆
+                        clean_filename = csv_filename
+                        if '-' in csv_filename:
+                            clean_filename = csv_filename.split('-', 1)[1]
+                        r_all = Result.query.filter_by(spectrogram_training_filename=clean_filename).all()
                         for r in r_all:
                             cet = CetaceanInfo.query.filter_by(audio_id=r.upload_id).order_by(CetaceanInfo.id.asc()).offset(r_idx if r_idx is not None else 0).first()
                             if cet:

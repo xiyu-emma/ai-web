@@ -193,6 +193,7 @@ class YoloTrainer:
                     
                     all_preds = []
                     all_labels = []
+                    confusion_details = []
                     
                     # 遍歷驗證集
                     if os.path.exists(val_dir):
@@ -209,10 +210,31 @@ class YoloTrainer:
                                                 pred_class = result[0].probs.top1
                                                 all_preds.append(pred_class)
                                                 all_labels.append(class_idx)
+                                                
+                                                pred_label_name = class_names[pred_class] if pred_class < len(class_names) else str(pred_class)
+                                                confusion_details.append([
+                                                    img_file,
+                                                    class_name,
+                                                    pred_label_name,
+                                                    'Yes' if class_idx == pred_class else 'No'
+                                                ])
                                         except Exception as pred_e:
                                             print(f"[YOLO 訓練] 預測圖片失敗 {img_file}: {pred_e}")
                     
                     print(f"[YOLO 訓練] 完成 {len(all_preds)} 張驗證圖片預測")
+                    
+                    # 寫入混淆矩陣詳細結果到 CSV 檔案
+                    import csv
+                    confusion_csv_path = os.path.join(train_results_dir, 'confusion_matrix_results.csv')
+                    try:
+                        with open(confusion_csv_path, 'w', newline='', encoding='utf-8') as f:
+                            writer = csv.writer(f)
+                            writer.writerow(['filename', 'true_label', 'predicted_label', 'correct'])
+                            for row in confusion_details:
+                                writer.writerow(row)
+                        print(f"[YOLO 訓練] 成功寫入混淆矩陣詳細 CSV: {confusion_csv_path}")
+                    except Exception as csv_e:
+                        print(f"[YOLO 訓練] 寫入 confusion_matrix_results.csv 失敗: {csv_e}")
                     
                     if all_preds and all_labels:
                         # 計算每類別指標

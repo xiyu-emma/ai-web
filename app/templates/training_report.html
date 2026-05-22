@@ -168,7 +168,7 @@ details .details-content { display: block !important; border: none !important; }
                 style="background: #10b981; border-color: #10b981;">
                 <i class="fas fa-file-pdf"></i> 匯出報告 (PDF)
             </button>
-            <a href="{{ url_for('static', filename=run.results_path + '/weights/best.pt') }}" class="btn btn-primary"
+            <a href="{{ url_for('main.download_training_results', run_id=run.id) }}" class="btn btn-primary"
                 download>
                 下載最佳模型
             </a>

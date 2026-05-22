@@ -99,7 +99,7 @@ class AudioService:
             results_data = process_large_audio(
                 filepath=upload_path,
                 result_dir=result_dir,
-                spec_type=params.get('spec_type', 'mel'),
+                spec_type=params.get('spec_type', 'log_mel'),
                 segment_duration=float(params.get('segment_duration', 2.0)),
                 overlap_ratio=float(params.get('overlap', 50)) / 100.0,
                 target_sr=int(params['sample_rate']) if params.get('sample_rate', 'None').isdigit() else None,
@@ -268,7 +268,7 @@ class AudioService:
                 group_defs.append({
                     'id': aid,
                     'result_dir': result_dir,
-                    'spec_type': params.get('spec_type', 'mel'),
+                    'spec_type': params.get('spec_type', 'log_mel'),
                     'spec_params': spec_params
                 })
                 

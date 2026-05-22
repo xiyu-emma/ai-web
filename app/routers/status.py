@@ -7,10 +7,12 @@ from ..models import AudioInfo, TrainingRun
 def upload_status(upload_id):
     """查詢分析任務狀態"""
     upload = AudioInfo.query.get_or_404(upload_id)
+    params = upload.get_params()
     return jsonify({
         'id': upload.id,
         'status': upload.status,
-        'progress': upload.progress
+        'progress': upload.progress,
+        'auto_label_result': params.get('auto_label_result')
     })
 
 @main_bp.route('/api/training/<int:run_id>/status')

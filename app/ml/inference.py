@@ -150,10 +150,19 @@ class InferenceService:
                         model = models.efficientnet_b0(weights=None)
                         num_ftrs = model.classifier[1].in_features
                         model.classifier[1] = nn.Linear(num_ftrs, num_classes)
+                    elif model_type == 'unet':
+                        from .unet import UNetClassifier
+                        model = UNetClassifier(n_channels=3, n_classes=num_classes)
                     else:
-                        model = models.resnet18(weights=None)
-                        num_ftrs = model.fc.in_features
-                        model.fc = nn.Linear(num_ftrs, num_classes)
+                        # 檢查 checkpoint 內存的架構資訊是否為 unet
+                        arch = checkpoint.get('arch', '') if isinstance(checkpoint, dict) else ''
+                        if arch == 'unet':
+                            from .unet import UNetClassifier
+                            model = UNetClassifier(n_channels=3, n_classes=num_classes)
+                        else:
+                            model = models.resnet18(weights=None)
+                            num_ftrs = model.fc.in_features
+                            model.fc = nn.Linear(num_ftrs, num_classes)
                     
                     # 載入權重
                     new_state_dict = {}
@@ -190,6 +199,7 @@ class InferenceService:
             
             total_items = len(results_list)
             count = 0
+            different_from_manual_count = 0
 
             # 逐一預測
             for i, (res_item, cetacean_item) in enumerate(zip(results_list, cetaceans_list)):
@@ -232,18 +242,31 @@ class InferenceService:
                 
                     # 寫入標記
                     if predicted_id != 0:
+                        # 統計與原本人工標記不同的筆數
+                        is_manual = getattr(cetacean_item, 'detect_type', 2) == 0
+                        orig_event_type = getattr(cetacean_item, 'event_type', 0)
+                        if is_manual and orig_event_type != 0 and orig_event_type != predicted_id:
+                            different_from_manual_count += 1
+
                         cetacean_item.ai_event_type = predicted_id
                         # 如果不是人工標記 (detect_type != 0) 或者尚未標記 (event_type == 0)，則套用 AI 預測
                         if getattr(cetacean_item, 'detect_type', 2) != 0 or getattr(cetacean_item, 'event_type', 0) == 0:
                             cetacean_item.event_type = predicted_id
                             cetacean_item.detect_type = 1 # 標記為 AI 辨識
-                        count += 1
+                            count += 1
                         
                 except Exception as e:
                     print(f"預測錯誤 (Index {i}): {e}")
                     continue
 
-            # 完成後更新狀態
+            # 完成後更新狀態並儲存統計結果
+            params_dict = audio_info.get_params()
+            params_dict['auto_label_result'] = {
+                'labeled_count': count,
+                'different_from_manual_count': different_from_manual_count
+            }
+            import json
+            audio_info.params = json.dumps(params_dict)
             audio_info.progress = 100
             audio_info.status = 'COMPLETED'
             db.session.commit()
@@ -255,17 +278,6 @@ class InferenceService:
             audio_info.status = 'COMPLETED'
             db.session.commit()
             traceback.print_exc()
-
-        finally:
-            # 清理暫存模型檔
-            if os.path.exists(model_path):
-                try:
-                    os.remove(model_path)
-                    parent = os.path.dirname(model_path)
-                    if not os.listdir(parent):
-                        os.rmdir(parent)
-                except Exception:
-                    pass  # 静默忽略目錄清理錯誤
 
     @staticmethod
     def auto_label_v2(upload_id, model_path, model_type='yolov8n-cls', classes_list=None):
@@ -329,9 +341,18 @@ class InferenceService:
                 elif model_type == 'efficientnet_b0':
                     model = models.efficientnet_b0(weights=None)
                     model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+                elif model_type == 'unet':
+                    from .unet import UNetClassifier
+                    model = UNetClassifier(n_channels=3, n_classes=num_classes)
                 else:
-                    model = models.resnet18(weights=None)
-                    model.fc = nn.Linear(model.fc.in_features, num_classes)
+                    # 檢查 checkpoint 內存的架構資訊是否為 unet
+                    arch = checkpoint.get('arch', '') if isinstance(checkpoint, dict) else ''
+                    if arch == 'unet':
+                        from .unet import UNetClassifier
+                        model = UNetClassifier(n_channels=3, n_classes=num_classes)
+                    else:
+                        model = models.resnet18(weights=None)
+                        model.fc = nn.Linear(model.fc.in_features, num_classes)
                 
                 new_state_dict = {}
                 for k, v in state_dict.items():
@@ -352,6 +373,7 @@ class InferenceService:
             
             total_items = len(results_list)
             count = 0
+            different_from_manual_count = 0
 
             for i, (res_item, cetacean_item) in enumerate(zip(results_list, cetaceans_list)):
                 if total_items > 0 and i % max(1, int(total_items * 0.05)) == 0:
@@ -393,17 +415,31 @@ class InferenceService:
                                 predicted_id = cnn_labels_map[pred_idx]
                     
                     if predicted_id != 0:
+                        # 統計與原本人工標記不同的筆數
+                        is_manual = getattr(cetacean_item, 'detect_type', 2) == 0
+                        orig_event_type = getattr(cetacean_item, 'event_type', 0)
+                        if is_manual and orig_event_type != 0 and orig_event_type != predicted_id:
+                            different_from_manual_count += 1
+
                         cetacean_item.ai_event_type = predicted_id
                         # 如果不是人工標記 (detect_type != 0) 或者尚未標記 (event_type == 0)，則套用 AI 預測
                         if getattr(cetacean_item, 'detect_type', 2) != 0 or getattr(cetacean_item, 'event_type', 0) == 0:
                             cetacean_item.event_type = predicted_id
                             cetacean_item.detect_type = 1
-                        count += 1
+                            count += 1
                         
                 except Exception as e:
                     print(f"預測錯誤 (Index {i}): {e}")
                     continue
 
+            # 完成後更新狀態並儲存統計結果
+            params_dict = audio_info.get_params()
+            params_dict['auto_label_result'] = {
+                'labeled_count': count,
+                'different_from_manual_count': different_from_manual_count
+            }
+            import json
+            audio_info.params = json.dumps(params_dict)
             audio_info.progress = 100
             audio_info.status = 'COMPLETED'
             db.session.commit()

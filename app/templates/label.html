@@ -652,5 +652,86 @@ to { transform: scale(1); opacity: 1; }
                 alert("網路錯誤");
             });
     }
+
+    const uploadId = {{ upload.id }};
+    let uploadStatus = "{{ upload.status }}";
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (uploadStatus === 'PROCESSING') {
+            showAutoLabelingOverlay();
+            startPollingStatus(uploadId);
+        }
+    });
+
+    let pollingInterval = null;
+
+    function showAutoLabelingOverlay() {
+        const box = document.querySelector('.auto-label-box');
+        if (box) {
+            box.style.backgroundColor = '#ecfdf5';
+            box.style.borderColor = '#a7f3d0';
+            box.innerHTML = `
+                <h4 style="margin: 0; color: #065f46; white-space: nowrap; display: flex; align-items: center; gap: 8px;">
+                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;">
+                        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+                    </svg>
+                    AI 自動標記處理中...
+                </h4>
+                <div style="flex-grow: 1; background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; position: relative;">
+                    <div id="auto-label-progress-bar" style="width: 0%; background: #10b981; height: 100%; transition: width 0.4s;"></div>
+                </div>
+                <span id="auto-label-progress-text" style="font-weight: bold; color: #047857; min-width: 45px; text-align: right;">0%</span>
+            `;
+            
+            if (!document.getElementById('spin-style')) {
+                const style = document.createElement('style');
+                style.id = 'spin-style';
+                style.innerHTML = `
+                    @keyframes spin {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+    }
+
+    function startPollingStatus(uploadId) {
+        if (pollingInterval) return;
+        pollingInterval = setInterval(() => {
+            fetch(`/api/upload/${uploadId}/status`)
+                .then(response => {
+                    if (!response.ok) throw new Error('網路錯誤');
+                    return response.json();
+                })
+                .then(data => {
+                    const bar = document.getElementById('auto-label-progress-bar');
+                    const txt = document.getElementById('auto-label-progress-text');
+                    if (bar) bar.style.width = `${data.progress}%`;
+                    if (txt) txt.textContent = `${data.progress}%`;
+
+                    if (data.status === 'COMPLETED') {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        
+                        const result = data.auto_label_result || { labeled_count: 0, different_from_manual_count: 0 };
+                        
+                        alert("AI 自動標記完成！\n\n- 成功標記：" + result.labeled_count + " 筆片段\n- 與原本人工標記不同：" + result.different_from_manual_count + " 筆片段");
+                        
+                        location.reload();
+                    } else if (data.status === 'FAILED') {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                        alert('自動標記失敗，請檢查模型檔案或後端日誌。');
+                        location.reload();
+                    }
+                })
+                .catch(err => {
+                    console.error('輪詢出錯:', err);
+                });
+        }, 2000);
+    }
 </script>
 {% endblock %}

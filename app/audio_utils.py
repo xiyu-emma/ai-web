@@ -145,7 +145,7 @@ def _square_law_demodulate(signal):
 
 # --- 核心繪圖函式 (已加入記憶體保護) ---
 
-def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel', spec_params=None):
+def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='log_mel', spec_params=None):
     """
     儲存頻譜圖。
     
@@ -154,7 +154,7 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
         sr: 取樣率
         out_path_display: 顯示用頻譜圖路徑
         out_path_training: 訓練用頻譜圖路徑
-        spec_type: 頻譜圖類型 ('mel', 'stft', 'classic_demon', 'envelope_spectrum', 'log_mel')
+        spec_type: 頻譜圖類型 ('log_mel', 'stft', 'classic_demon', 'envelope_spectrum', 'linear_mel')
         spec_params: 頻譜圖參數字典，包含:
             - n_fft: FFT window size (預設 1024)
             - hop_length: 步幅 (預設 512)
@@ -187,7 +187,7 @@ def save_spectrogram(y, sr, out_path_display, out_path_training, spec_type='mel'
     elif spec_type == 'envelope_spectrum':
         save_envelope_spectrum_plot(y, sr, out_path_display, out_path_training, spec_params)
         return
-    elif spec_type == 'log_mel':
+    elif spec_type == 'log_mel' or spec_type == 'mel':
         save_log_mel_plot(y, sr, out_path_display, out_path_training, spec_params)
         return
     elif spec_type == 'linear_mel':

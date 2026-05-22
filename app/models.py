@@ -491,7 +491,8 @@ class TrainingRun(db.Model):
             'yolov8n-cls': 'YOLOv8n',
             'yolov8s-cls': 'YOLOv8s',
             'resnet18': 'ResNet18',
-            'efficientnet_b0': 'EfficientNet-B0'
+            'efficientnet_b0': 'EfficientNet-B0',
+            'unet': 'U-Net'
         }
         params = self.get_params()
         model_type = params.get('model_type', 'yolov8n-cls')

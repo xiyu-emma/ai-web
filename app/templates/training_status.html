@@ -101,7 +101,7 @@ to { background-position: 0 0; }
                                 style="padding: 4px 10px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px;">
                                 查看報告
                             </a>
-                            <a href="{{ url_for('static', filename=run.results_path + '/weights/best.pt') }}"
+                            <a href="{{ url_for('main.download_training_results', run_id=run.id) }}"
                                 class="btn btn-primary"
                                 style="padding: 4px 10px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px;"
                                 download>
@@ -181,7 +181,10 @@ to { background-position: 0 0; }
                     let max = Math.max(start, end);
                     
                     for (let i = min; i <= max; i++) {
-                        runCheckboxes[i].checked = isChecked;
+                        let row = runCheckboxes[i].closest('tr');
+                        if (!row || row.style.display !== 'none') {
+                            runCheckboxes[i].checked = isChecked;
+                        }
                     }
                 }
                 lastCheckedRun = this;
@@ -276,7 +279,7 @@ to { background-position: 0 0; }
                     // 使用 JS 動態生成 HTML
                     actionCell.innerHTML = `
                         <a href="/training/report/${data.id}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.85rem;">查看報告</a>
-                        <a href="/static/training_runs/${data.id}/train_results/weights/best.pt" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.85rem;" download>下載模型</a>
+                        <a href="/training/download/${data.id}" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.85rem;" download>下載模型</a>
                     `;
                 } else if (data.status === 'FAILURE') {
                     actionCell.innerHTML = '<span style="color: var(--highlight);">訓練失敗</span>';

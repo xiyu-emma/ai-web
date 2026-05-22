@@ -304,3 +304,40 @@ def training_report(run_id):
         used_audios=used_audios,
         total_label_counts=sorted_total_counts if upload_ids else {}
     )
+
+@main_bp.route('/training/download/<int:run_id>')
+def download_training_results(run_id):
+    """打包下載模型權重 (best.pt) 與測試階段混淆矩陣的詳細預測結果 (confusion_matrix_results.csv)"""
+    import zipfile
+    import io
+    from flask import send_file, current_app
+    
+    run = TrainingRun.query.get_or_404(run_id)
+    if not run.results_path:
+        return "找不到訓練結果路徑，可能訓練尚未完成或已失敗。", 404
+        
+    static_path = os.path.join(current_app.root_path, 'static')
+    results_dir = os.path.join(static_path, run.results_path.replace('\\', '/'))
+    
+    best_model_path = os.path.join(results_dir, 'weights', 'best.pt')
+    confusion_csv_path = os.path.join(results_dir, 'confusion_matrix_results.csv')
+    
+    # 檢查是否至少有一個檔案存在
+    if not os.path.exists(best_model_path) and not os.path.exists(confusion_csv_path):
+        return "找不到可下載的訓練結果檔案。", 404
+        
+    memory_file = io.BytesIO()
+    try:
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            if os.path.exists(best_model_path):
+                zf.write(best_model_path, 'best.pt')
+            if os.path.exists(confusion_csv_path):
+                zf.write(confusion_csv_path, 'confusion_matrix_results.csv')
+                
+        memory_file.seek(0)
+        download_name = f"training_results_run_{run_id}.zip"
+        return send_file(memory_file, mimetype='application/zip', as_attachment=True, download_name=download_name)
+    except Exception as e:
+        print(f"打包訓練結果時發生錯誤: {e}")
+        return f"打包下載失敗: {e}", 500
+

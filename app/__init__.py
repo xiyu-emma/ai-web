@@ -86,8 +86,8 @@ def create_app():
     # Celery 配置更新
     # ------------------------------------------------------------------------
     celery.conf.update(
-        broker_url=os.environ.get('CELERY_BROKER_URL'),
-        result_backend=os.environ.get('CELERY_RESULT_BACKEND'),
+        broker_url=os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0'),
+        result_backend=os.environ.get('CELERY_RESULT_BACKEND', 'redis://redis:6379/0'),
         broker_transport_options={'visibility_timeout': 86400} # 設定 24 小時超時，避免長音檔被重複派發
     )
 
