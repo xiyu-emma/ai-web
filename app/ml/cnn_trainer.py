@@ -58,7 +58,7 @@ class CnnTrainer:
             
             # 建立對照表
             results_map = defaultdict(list)
-            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.spectrogram_training_filename.asc()).all()
+            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.id.asc()).all()
             for res in all_results:
                 results_map[res.upload_id].append(res)
             

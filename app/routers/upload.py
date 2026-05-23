@@ -182,7 +182,7 @@ def import_excel():
                         u_id = int(numbers[0])
                         r_idx = int(numbers[-1])
                         
-                        r = Result.query.filter_by(upload_id=u_id).order_by(Result.spectrogram_training_filename.asc()).offset(r_idx).first()
+                        r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
                         cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.start_sample.asc()).offset(r_idx).first()
                         
                         if r and cet:

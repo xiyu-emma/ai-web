@@ -194,7 +194,7 @@ class InferenceService:
             # 準備 Label Mapping (Class Name -> ID) for YOLO
             all_labels_obj_map = {label.name: label.id for label in Label.query.all()}
 
-            results_list = Result.query.filter_by(upload_id=upload_id).order_by(Result.spectrogram_training_filename.asc()).all()
+            results_list = Result.query.filter_by(upload_id=upload_id).order_by(Result.id.asc()).all()
             cetaceans_list = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.start_sample.asc()).all()
             
             total_items = len(results_list)
@@ -368,7 +368,7 @@ class InferenceService:
                 ])
             
             # 執行推論
-            results_list = Result.query.filter_by(upload_id=upload_id).order_by(Result.spectrogram_training_filename.asc()).all()
+            results_list = Result.query.filter_by(upload_id=upload_id).order_by(Result.id.asc()).all()
             cetaceans_list = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.start_sample.asc()).all()
             
             total_items = len(results_list)
