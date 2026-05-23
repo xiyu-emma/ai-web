@@ -80,17 +80,15 @@
                         <span class="param-label">窗函數</span>
                         <span class="param-value">{{ params.get('window_type', 'hann') }}</span>
                     </div>
-                    {% if params.get('spec_type') in ['mel', 'log_mel', 'linear_mel'] %}
+                    {% if params.get('spec_type') == 'mel' %}
                     <div class="param-item">
                         <span class="param-label">Mel 濾波器數</span>
                         <span class="param-value">{{ params.get('n_mels', 128) }}</span>
                     </div>
-                    {% endif %}
-                    {% if params.get('spec_type') in ['mel', 'log_mel', 'linear_mel', 'stft'] %}
                     <div class="param-item">
                         <span class="param-label">頻率範圍</span>
                         <span class="param-value">{{ params.get('f_min', 0) }} - {{ params.get('f_max', 0) if
-                            params.get('f_max', 0)|float > 0 else 'Nyquist' }} Hz</span>
+                            params.get('f_max', 0) > 0 else 'Nyquist' }} Hz</span>
                     </div>
                     {% endif %}
                     <div class="param-item">
@@ -115,7 +113,7 @@
             <tbody>
                 {% for item in pagination.items %}
                 <tr>
-                    <td><strong>#{{ (pagination.page - 1) * pagination.per_page + loop.index }}</strong></td>
+                    <td><strong>#{{ (pagination.page - 1) * pagination.per_page + loop.index0 }}</strong></td>
                     <td style="font-family: 'Consolas', monospace; font-size: 1.1em; color: var(--primary-dark);">
                         {% set start_time = (loop.index0 + (pagination.page - 1) * pagination.per_page) *
                         hop_length_seconds %}

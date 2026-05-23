@@ -51,19 +51,19 @@ class CnnTrainer:
             labeled_cetaceans = CetaceanInfo.query.filter(
                 CetaceanInfo.audio_id.in_(upload_ids),
                 CetaceanInfo.event_type != 0
-            ).order_by(CetaceanInfo.audio_id, CetaceanInfo.id).all()
+            ).order_by(CetaceanInfo.audio_id, CetaceanInfo.start_sample.asc()).all()
             
             if not labeled_cetaceans:
                 raise ValueError("找不到任何已標記的資料來進行訓練。")
             
             # 建立對照表
             results_map = defaultdict(list)
-            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.id).all()
+            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.spectrogram_training_filename.asc()).all()
             for res in all_results:
                 results_map[res.upload_id].append(res)
             
             all_cetaceans_map = defaultdict(list)
-            all_cetaceans = CetaceanInfo.query.filter(CetaceanInfo.audio_id.in_(upload_ids)).order_by(CetaceanInfo.audio_id, CetaceanInfo.id).all()
+            all_cetaceans = CetaceanInfo.query.filter(CetaceanInfo.audio_id.in_(upload_ids)).order_by(CetaceanInfo.audio_id, CetaceanInfo.start_sample.asc()).all()
             for c in all_cetaceans:
                 all_cetaceans_map[c.audio_id].append(c)
             

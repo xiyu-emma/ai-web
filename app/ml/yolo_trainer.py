@@ -38,30 +38,26 @@ class YoloTrainer:
             base_dir = os.path.join(current_app.root_path, 'static', 'training_runs', str(training_run_id))
             dataset_dir = os.path.join(base_dir, 'dataset')
             
-            # 找出有標記的 Result (透過 CetaceanInfo 的 event_type 映射，或者假設 Result 也有 label 關聯)
-            # 為了訓練，我們需要將 CetaceanInfo 的標記對應到 Result 的圖片
-            # 這裡採用更嚴謹的配對方式
-            
             # 先撈取所有相關的 CetaceanInfo (有標記的)
             labeled_cetaceans = CetaceanInfo.query.filter(
                 CetaceanInfo.audio_id.in_(upload_ids),
                 CetaceanInfo.event_type != 0
-            ).order_by(CetaceanInfo.audio_id, CetaceanInfo.id).all()
+            ).order_by(CetaceanInfo.audio_id, CetaceanInfo.start_sample.asc()).all()
 
             if not labeled_cetaceans:
                 raise ValueError("找不到任何已標記的資料來進行訓練。")
 
             # 建立對照表以加速查找 Result
             # Map: (audio_id, index) -> Result
-            # 注意：這依賴於 Result 與 CetaceanInfo 的 ID 順序一致性
+            # 注意：這依賴於 Result 與 CetaceanInfo 的順序一致性
             results_map = defaultdict(list)
-            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.id).all()
+            all_results = Result.query.filter(Result.upload_id.in_(upload_ids)).order_by(Result.upload_id, Result.spectrogram_training_filename.asc()).all()
             for res in all_results:
                 results_map[res.upload_id].append(res)
             
             # 為了計算 Index，我們也需要該 audio 所有的 cetacean
             all_cetaceans_map = defaultdict(list)
-            all_cetaceans = CetaceanInfo.query.filter(CetaceanInfo.audio_id.in_(upload_ids)).order_by(CetaceanInfo.audio_id, CetaceanInfo.id).all()
+            all_cetaceans = CetaceanInfo.query.filter(CetaceanInfo.audio_id.in_(upload_ids)).order_by(CetaceanInfo.audio_id, CetaceanInfo.start_sample.asc()).all()
             for c in all_cetaceans:
                 all_cetaceans_map[c.audio_id].append(c)
 

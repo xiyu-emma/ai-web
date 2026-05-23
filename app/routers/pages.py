@@ -85,14 +85,14 @@ def results(upload_id):
         hop_length_seconds = 1.0
 
     # 1. 查詢資料分頁 (CetaceanInfo)
-    pagination = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.id.asc()).paginate(
+    pagination = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.start_sample.asc()).paginate(
         page=page, per_page=10, error_out=False
     )
     
     # 2. 查詢對應的圖片 (Result)
     offset = (page - 1) * 10
     limit = 10
-    results_slice = Result.query.filter_by(upload_id=upload_id).order_by(Result.id.asc()).offset(offset).limit(limit).all()
+    results_slice = Result.query.filter_by(upload_id=upload_id).order_by(Result.spectrogram_training_filename.asc()).offset(offset).limit(limit).all()
     
     # 3. 動態合併
     for cetacean, result in zip(pagination.items, results_slice):
@@ -115,12 +115,12 @@ def labeling_page(upload_id):
     page = request.args.get('page', 1, type=int)
     upload_record = AudioInfo.query.get_or_404(upload_id)
     
-    pagination = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.id.asc()).paginate(
+    pagination = CetaceanInfo.query.filter_by(audio_id=upload_id).order_by(CetaceanInfo.start_sample.asc()).paginate(
         page=page, per_page=50, error_out=False
     )
     
     offset = (page - 1) * 50
-    results_slice = Result.query.filter_by(upload_id=upload_id).order_by(Result.id.asc()).offset(offset).limit(50).all()
+    results_slice = Result.query.filter_by(upload_id=upload_id).order_by(Result.spectrogram_training_filename.asc()).offset(offset).limit(50).all()
     
     for cetacean, result in zip(pagination.items, results_slice):
         setattr(cetacean, 'spectrogram_url', result.spectrogram_url)
@@ -161,7 +161,7 @@ def label_advanced_page(upload_id):
     upload_record = AudioInfo.query.get_or_404(upload_id)
     index = request.args.get('index', 0, type=int)
 
-    results_all = Result.query.filter_by(upload_id=upload_id).order_by(Result.id.asc()).all()
+    results_all = Result.query.filter_by(upload_id=upload_id).order_by(Result.spectrogram_training_filename.asc()).all()
     total = len(results_all)
 
     if total == 0:
