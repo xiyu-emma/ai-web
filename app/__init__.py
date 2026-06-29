@@ -24,6 +24,8 @@ Flask 應用程式初始化模組。
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+from werkzeug.security import generate_password_hash
 from celery import Celery, Task
 
 # ============================================================================
@@ -32,6 +34,12 @@ from celery import Celery, Task
 
 # SQLAlchemy 資料庫實例
 db = SQLAlchemy()
+
+# 登入管理員實例
+login_manager = LoginManager()
+login_manager.login_view = 'main.login'
+login_manager.login_message = '請先登入以存取此頁面。'
+login_manager.login_message_category = 'warning'
 
 # Celery 任務佇列實例
 # - broker: 訊息佇列位置 (Redis)
@@ -74,13 +82,22 @@ def create_app():
     app = Flask(__name__)
 
     # ------------------------------------------------------------------------
-    # 資料庫配置
+    # 資料庫配置與安全設定
     # ------------------------------------------------------------------------
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-secret-key-for-ai-web')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
         'DATABASE_URL', 
         'mysql+pymysql://user:password@db/audio_db'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # 初始化登入管理員
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from .models import User
+        return User.query.get(int(user_id))
 
     # ------------------------------------------------------------------------
     # Celery 配置更新
@@ -119,9 +136,22 @@ def create_app():
         # 建立所有資料表（如果不存在）
         try:
             db.create_all()
+            
+            # 建立預設管理員帳號 (admin/admin123)
+            from .models import User
+            admin_user = User.query.filter_by(username='admin').first()
+            if not admin_user:
+                admin_user = User(
+                    username='admin', 
+                    password_hash=generate_password_hash('admin123')
+                )
+                db.session.add(admin_user)
+                db.session.commit()
+                print("已建立預設管理員帳號：admin / admin123")
+                
         except Exception as e:
             # 忽略並發建立表格的錯誤（例如多個 worker 同時啟動）
-            print(f"資料庫表格建立檢查: {e}")
+            print(f"資料庫表格建立或預設帳號初始化檢查: {e}")
 
     # ------------------------------------------------------------------------
     # Celery 與 Flask 上下文整合

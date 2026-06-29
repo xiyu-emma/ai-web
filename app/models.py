@@ -30,6 +30,7 @@ from . import db
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
+from flask_login import UserMixin
 
 # ============================================================================
 # 全域配置
@@ -38,6 +39,28 @@ import json
 # 台北時區（UTC+8）
 # 用於所有 DateTime 欄位的預設值
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+
+
+# ============================================================================
+# 使用者認證模型
+# ============================================================================
+
+class User(db.Model, UserMixin):
+    """
+    使用者帳號表。
+    
+    用於管理系統登入帳號。
+    
+    Attributes:
+        id (int): 主鍵
+        username (str): 登入帳號（唯一）
+        password_hash (str): 加密後的密碼
+    """
+    __tablename__ = 'users'
+    
+    id = db.Column(db.Integer, primary_key=True, comment='主鍵')
+    username = db.Column(db.String(50), unique=True, nullable=False, comment='使用者名稱')
+    password_hash = db.Column(db.String(255), nullable=False, comment='密碼雜湊')
 
 
 # ============================================================================
@@ -492,7 +515,8 @@ class TrainingRun(db.Model):
             'yolov8s-cls': 'YOLOv8s',
             'resnet18': 'ResNet18',
             'efficientnet_b0': 'EfficientNet-B0',
-            'unet': 'U-Net'
+            'unet': 'U-Net',
+            'attention_unet': 'Attention U-Net'
         }
         params = self.get_params()
         model_type = params.get('model_type', 'yolov8n-cls')

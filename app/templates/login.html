@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}登入 - AIWeb 聲景分析平台{% endblock %}
+
+{% block extra_css %}
+<style>
+    .auth-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: calc(100vh - 160px);
+        width: 100%;
+    }
+    .auth-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 40px;
+        width: 100%;
+        max-width: 400px;
+        margin: 0 auto;
+        box-shadow: var(--shadow-md);
+        text-align: center;
+    }
+    .auth-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 24px;
+        color: var(--text-primary);
+    }
+    .form-group {
+        margin-bottom: 20px;
+        text-align: left;
+    }
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+    .form-control {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-body);
+        color: var(--text-primary);
+        font-size: 16px;
+    }
+    .form-control:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+    .btn-auth {
+        width: 100%;
+        padding: 12px;
+        font-size: 16px;
+        margin-top: 10px;
+    }
+    .auth-footer {
+        margin-top: 24px;
+        font-size: 14px;
+        color: var(--text-secondary);
+    }
+    .auth-footer a {
+        color: var(--primary-color);
+        text-decoration: none;
+    }
+    .flash-messages {
+        margin-bottom: 20px;
+    }
+    .flash-message {
+        padding: 12px;
+        border-radius: var(--radius-md);
+        margin-bottom: 10px;
+        font-size: 14px;
+    }
+    .flash-danger {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .flash-warning {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .flash-success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <h2 class="auth-title">登入帳號</h2>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        <form method="POST" action="{{ url_for('main.login') }}">
+            <div class="form-group">
+                <label for="username">使用者帳號</label>
+                <input type="text" id="username" name="username" class="form-control" required autofocus placeholder="請輸入帳號">
+            </div>
+            <div class="form-group">
+                <label for="password">密碼</label>
+                <input type="password" id="password" name="password" class="form-control" required placeholder="請輸入密碼">
+            </div>
+            <button type="submit" class="btn btn-primary btn-auth">登入</button>
+        </form>
+        <div class="auth-footer">
+            還沒有帳號？ <a href="{{ url_for('main.register') }}">點此註冊</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

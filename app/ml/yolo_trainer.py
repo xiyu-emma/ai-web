@@ -91,6 +91,7 @@ class YoloTrainer:
             total_val_images = 0
             
             # 建立資料集 (複製圖檔)
+            dataset_details = []
             for (lbl_id, label_name), items in data_by_label.items():
                 random.shuffle(items)
                 
@@ -115,6 +116,13 @@ class YoloTrainer:
                         source_path = os.path.join(current_app.root_path, 'static', item.audio_info.result_path, item.spectrogram_training_filename)
                         if os.path.exists(source_path):
                             shutil.copy(source_path, label_folder)
+                            split_name = 'train' if 'train' in target_dir else 'val'
+                            dataset_details.append({
+                                'filename': item.spectrogram_training_filename,
+                                'original_audio': item.audio_info.file_name,
+                                'label_name': label_name,
+                                'split': split_name
+                            })
             
             # 容錯：若無驗證集，複製訓練集充當
             if total_val_images == 0:
@@ -123,6 +131,17 @@ class YoloTrainer:
                 if os.path.exists(src_train):
                     if os.path.exists(dst_val): shutil.rmtree(dst_val)
                     shutil.copytree(src_train, dst_val)
+                    # 同時更新 dataset_details
+                    copied_val_details = []
+                    for detail in dataset_details:
+                        if detail['split'] == 'train':
+                            copied_val_details.append({
+                                'filename': detail['filename'],
+                                'original_audio': detail['original_audio'],
+                                'label_name': detail['label_name'],
+                                'split': 'val'
+                            })
+                    dataset_details.extend(copied_val_details)
             
             training_run.progress = 15
             db.session.commit()
@@ -219,18 +238,30 @@ class YoloTrainer:
                     
                     print(f"[YOLO 訓練] 完成 {len(all_preds)} 張驗證圖片預測")
                     
-                    # 寫入混淆矩陣詳細結果到 CSV 檔案
+                    # 寫入混淆矩陣詳細結果到 CSV 檔案與 Excel 檔案
                     import csv
+                    import pandas as pd
                     confusion_csv_path = os.path.join(train_results_dir, 'confusion_matrix_results.csv')
+                    confusion_xlsx_path = os.path.join(train_results_dir, 'confusion_matrix_results.xlsx')
+                    
                     try:
-                        with open(confusion_csv_path, 'w', newline='', encoding='utf-8') as f:
-                            writer = csv.writer(f)
-                            writer.writerow(['filename', 'true_label', 'predicted_label', 'correct'])
-                            for row in confusion_details:
-                                writer.writerow(row)
+                        # 1. 寫入 CSV (保留原邏輯)
+                        df_preds = pd.DataFrame(confusion_details, columns=['filename', 'true_label', 'predicted_label', 'correct'])
+                        df_preds.to_csv(confusion_csv_path, index=False, encoding='utf-8')
                         print(f"[YOLO 訓練] 成功寫入混淆矩陣詳細 CSV: {confusion_csv_path}")
                     except Exception as csv_e:
                         print(f"[YOLO 訓練] 寫入 confusion_matrix_results.csv 失敗: {csv_e}")
+                        
+                    try:
+                        # 2. 寫入 Excel (包含預測結果與訓練資料集兩個工作表)
+                        df_preds = pd.DataFrame(confusion_details, columns=['filename', 'true_label', 'predicted_label', 'correct'])
+                        df_dataset = pd.DataFrame(dataset_details)
+                        with pd.ExcelWriter(confusion_xlsx_path, engine='openpyxl') as writer:
+                            df_preds.to_excel(writer, sheet_name='預測結果', index=False)
+                            df_dataset.to_excel(writer, sheet_name='訓練資料集', index=False)
+                        print(f"[YOLO 訓練] 成功寫入混淆矩陣與資料集 Excel: {confusion_xlsx_path}")
+                    except Exception as xlsx_e:
+                        print(f"[YOLO 訓練] 寫入 confusion_matrix_results.xlsx 失敗: {xlsx_e}")
                     
                     if all_preds and all_labels:
                         # 計算每類別指標

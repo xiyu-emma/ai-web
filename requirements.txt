@@ -22,3 +22,7 @@ Pillow
 scikit-learn
 pandas
 openpyxl
+onnx
+onnxruntime
+onnxscript
+Flask-Login

@@ -176,7 +176,8 @@ def training_report(run_id):
         'yolov8s-cls': 'YOLOv8s Classification',
         'resnet18': 'ResNet18 (PyTorch)',
         'efficientnet_b0': 'EfficientNet-B0 (PyTorch)',
-        'unet': 'U-Net Classifier (PyTorch)'
+        'unet': 'U-Net Classifier (PyTorch)',
+        'attention_unet': 'Attention U-Net Classifier (PyTorch)'
     }
     
     results_base_path = run.results_path.replace('\\', '/')
@@ -307,10 +308,11 @@ def training_report(run_id):
 
 @main_bp.route('/training/download/<int:run_id>')
 def download_training_results(run_id):
-    """打包下載模型權重 (best.pt) 與測試階段混淆矩陣的詳細預測結果 (confusion_matrix_results.csv)"""
+    """打包下載模型權重 (best.pt 或 best.onnx) 與測試階段混淆矩陣的詳細預測結果"""
     import zipfile
     import io
-    from flask import send_file, current_app
+    from flask import send_file, current_app, request
+    import json
     
     run = TrainingRun.query.get_or_404(run_id)
     if not run.results_path:
@@ -321,21 +323,98 @@ def download_training_results(run_id):
     
     best_model_path = os.path.join(results_dir, 'weights', 'best.pt')
     confusion_csv_path = os.path.join(results_dir, 'confusion_matrix_results.csv')
+    confusion_xlsx_path = os.path.join(results_dir, 'confusion_matrix_results.xlsx')
     
     # 檢查是否至少有一個檔案存在
-    if not os.path.exists(best_model_path) and not os.path.exists(confusion_csv_path):
+    if not os.path.exists(best_model_path) and not os.path.exists(confusion_csv_path) and not os.path.exists(confusion_xlsx_path):
         return "找不到可下載的訓練結果檔案。", 404
         
+    req_formats = request.args.getlist('format')
+    if not req_formats:
+        req_format = request.args.get('format')
+        if req_format:
+            req_formats = [req_format]
+        else:
+            req_formats = ['pt']
+    
+    params = run.get_params() if hasattr(run, 'get_params') else {}
+    if isinstance(params, str):
+        params = json.loads(params) if params else {}
+
+    if 'onnx' in req_formats and os.path.exists(best_model_path):
+        onnx_model_path = os.path.join(results_dir, 'weights', 'best.onnx')
+        if not os.path.exists(onnx_model_path):
+            # 嘗試動態轉換 ONNX
+            try:
+                import torch
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                checkpoint = torch.load(best_model_path, map_location=device)
+                
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    # 這是一個 CNN 模型
+                    from torchvision import models
+                    model_name = checkpoint.get('arch', params.get('model_type', 'resnet18'))
+                    num_classes = len(checkpoint.get('classes', []))
+                    
+                    if model_name == 'resnet18':
+                        model = models.resnet18()
+                        model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+                    elif model_name == 'efficientnet_b0':
+                        model = models.efficientnet_b0()
+                        model.classifier[1] = torch.nn.Linear(model.classifier[1].in_features, num_classes)
+                    elif model_name == 'unet':
+                        import sys
+                        if current_app.root_path not in sys.path:
+                            sys.path.append(current_app.root_path)
+                        from app.ml.unet import UNetClassifier
+                        model = UNetClassifier(n_channels=3, n_classes=num_classes)
+                    elif model_name == 'attention_unet':
+                        import sys
+                        if current_app.root_path not in sys.path:
+                            sys.path.append(current_app.root_path)
+                        from app.ml.unet import AttentionUNetClassifier
+                        model = AttentionUNetClassifier(n_channels=3, n_classes=num_classes)
+                    else:
+                        raise ValueError(f"不支援的 CNN 架構: {model_name}")
+                    
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    model.to(device)
+                    model.eval()
+                    
+                    image_size = params.get('image_size', 224)
+                    dummy_input = torch.randn(1, 3, image_size, image_size).to(device)
+                    torch.onnx.export(model, dummy_input, onnx_model_path, 
+                                      input_names=['input'], output_names=['output'],
+                                      dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+                else:
+                    # YOLO 模型
+                    from ultralytics import YOLO
+                    model = YOLO(best_model_path)
+                    model.export(format='onnx')
+            except Exception as e:
+                import traceback
+                print(f"ONNX 轉換失敗: {e}")
+                traceback.print_exc()
+                
     memory_file = io.BytesIO()
     try:
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            if os.path.exists(best_model_path):
+            if 'pt' in req_formats and os.path.exists(best_model_path):
                 zf.write(best_model_path, 'best.pt')
-            if os.path.exists(confusion_csv_path):
+            
+            if 'onnx' in req_formats:
+                onnx_model_path = os.path.join(results_dir, 'weights', 'best.onnx')
+                if os.path.exists(onnx_model_path):
+                    zf.write(onnx_model_path, 'best.onnx')
+            
+            if os.path.exists(confusion_xlsx_path):
+                zf.write(confusion_xlsx_path, 'confusion_matrix_results.xlsx')
+            elif os.path.exists(confusion_csv_path):
                 zf.write(confusion_csv_path, 'confusion_matrix_results.csv')
                 
         memory_file.seek(0)
-        download_name = f"training_results_run_{run_id}.zip"
+        format_suffix = "_".join(req_formats)
+        download_name = f"training_results_run_{run_id}_{format_suffix}.zip"
         return send_file(memory_file, mimetype='application/zip', as_attachment=True, download_name=download_name)
     except Exception as e:
         print(f"打包訓練結果時發生錯誤: {e}")

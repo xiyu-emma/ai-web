@@ -100,10 +100,10 @@ def import_excel():
     if not files:
         return jsonify({'error': '沒有選擇檔案'}), 400
     
-    default_label = request.form.get('default_label', 'whale')
+    default_label = request.form.get('default_label', 'cetacean')
     
     LABEL_TO_EVENT_TYPE = {
-        'whale': 1, 'unknown': 0, 'whale_unknown': 10, 'whale_upsweep': 11, 'whale_downsweep': 12,
+        'cetacean': 1, 'unknown': 0, 'whale_unknown': 10, 'whale_upsweep': 11, 'whale_downsweep': 12,
         'whale_concave': 13, 'whale_convex': 14, 'whale_sine': 15, 'whale_click': 16,
         'whale_burst': 17, 'whale_constant': 18, 'noise': 90, 'ship': 91, 'piling': 92
     }
@@ -133,12 +133,12 @@ def import_excel():
             
         if 'filename' in df.columns:
                 NAME_TO_EVENT_TYPE = {
-                    "Unlabeled": 0, "Whale": 1, "Unknown Vocalization": 10, "Upsweep": 11,
+                    "Unlabeled": 0, "Cetacean": 1, "Unknown Vocalization": 10, "Upsweep": 11,
                     "Downsweep": 12, "Concave": 13, "Convex": 14, "Sine": 15, "Click": 16,
                     "Burst": 17, "Constant": 18, "Noise": 90, "Ship": 91, "Piling": 92
                 }
                 EVENT_TYPE_TO_STR = {
-                    0: "unknown", 1: "whale", 10: "whale_unknown", 11: "whale_upsweep",
+                    0: "unknown", 1: "cetacean", 10: "whale_unknown", 11: "whale_upsweep",
                     12: "whale_downsweep", 13: "whale_concave", 14: "whale_convex",
                     15: "whale_sine", 16: "whale_click", 17: "whale_burst", 18: "whale_constant",
                     90: "noise", 91: "ship", 92: "piling"
@@ -163,10 +163,10 @@ def import_excel():
                     except ValueError:
                         # 支援大小寫不敏感，以及中文對應
                         NAME_TO_EVENT_TYPE_EXTENDED = {
-                            "unlabeled": 0, "whale": 1, "unknown vocalization": 10, "upsweep": 11,
+                            "unlabeled": 0, "cetacean": 1, "unknown vocalization": 10, "upsweep": 11,
                             "downsweep": 12, "concave": 13, "convex": 14, "sine": 15, "click": 16,
                             "burst": 17, "constant": 18, "noise": 90, "ship": 91, "piling": 92,
-                            "未知": 0, "無標記": 0, "鯨魚": 1, "未知發聲": 10, "上升型": 11,
+                            "未知": 0, "無標記": 0, "鯨豚": 1, "未知發聲": 10, "上升型": 11,
                             "下降型": 12, "u型": 13, "倒u型": 14, "sin型": 15, "嘎搭聲": 16,
                             "突發脈衝聲": 17, "常數型": 18, "環境噪音": 90, "船舶": 91, "風機打樁": 92
                         }
@@ -174,55 +174,81 @@ def import_excel():
                         
                     new_bbox_label = EVENT_TYPE_TO_STR.get(new_event_type, "unknown")
                     
-                    name_without_ext = os.path.splitext(csv_filename)[0]
-                    numbers = re.findall(r'\d+', name_without_ext)
-                    
                     processed = False
-                    if len(numbers) >= 2:
-                        u_id = int(numbers[0])
-                        r_idx = int(numbers[-1])
+                    
+                    # 1. 優先邏輯：透過 original_audio 與 csv_filename 提取 r_idx
+                    if original_audio and original_audio.lower() != 'nan':
+                        r_idx_match = re.search(r'_spec_training_(\d+)\.', csv_filename)
+                        if not r_idx_match:
+                            r_idx_match = re.search(r'^(\d+)_', csv_filename)
                         
-                        r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
-                        cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.start_sample.asc()).offset(r_idx).first()
-                        
-                        if r and cet:
-                            cet.event_type = new_event_type
-                            cet.detect_type = 0
-                                
-                            existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
-                            if existing_bbox:
-                                existing_bbox.label = new_bbox_label
-                            else:
-                                new_box = BBoxAnnotation(
-                                    result_id=r.id,
-                                    label=new_bbox_label,
-                                    x=0.0, y=0.0, width=1.0, height=1.0
-                                )
-                                db.session.add(new_box)
-                            added += 1
-                            processed = True
-                            
-                    # 原有邏輯作為安全備用，防止檔名特殊時失效
-                    if not processed:
-                        targets = []
-                        if original_audio and original_audio.lower() != 'nan':
+                        if r_idx_match:
+                            r_idx = int(r_idx_match.group(1))
                             audios = AudioInfo.query.filter_by(file_name=original_audio).all()
                             for audio in audios:
-                                r = Result.query.filter_by(upload_id=audio.id, spectrogram_training_filename=csv_filename).first()
-                                if r:
-                                    targets.append((r, audio.id, csv_filename))
+                                u_id = audio.id
+                                r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
+                                cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.start_sample.asc()).offset(r_idx).first()
+                                
+                                if r and cet:
+                                    cet.event_type = new_event_type
+                                    cet.detect_type = 0
+                                    
+                                    existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                                    if existing_bbox:
+                                        existing_bbox.label = new_bbox_label
+                                    else:
+                                        new_box = BBoxAnnotation(
+                                            result_id=r.id,
+                                            label=new_bbox_label,
+                                            x=0.0, y=0.0, width=1.0, height=1.0
+                                        )
+                                        db.session.add(new_box)
+                                    added += 1
+                                    processed = True
+
+                    # 2. 次優先邏輯：透過檔名數字解析定位 (舊有優先邏輯)
+                    if not processed:
+                        name_without_ext = os.path.splitext(csv_filename)[0]
+                        numbers = re.findall(r'\d+', name_without_ext)
+                        if len(numbers) >= 2:
+                            u_id = int(numbers[0])
+                            r_idx = int(numbers[-1])
+                            
+                            r = Result.query.filter_by(upload_id=u_id).order_by(Result.id.asc()).offset(r_idx).first()
+                            cet = CetaceanInfo.query.filter_by(audio_id=u_id).order_by(CetaceanInfo.start_sample.asc()).offset(r_idx).first()
+                            
+                            if r and cet:
+                                cet.event_type = new_event_type
+                                cet.detect_type = 0
+                                    
+                                existing_bbox = BBoxAnnotation.query.filter_by(result_id=r.id).first()
+                                if existing_bbox:
+                                    existing_bbox.label = new_bbox_label
+                                else:
+                                    new_box = BBoxAnnotation(
+                                        result_id=r.id,
+                                        label=new_bbox_label,
+                                        x=0.0, y=0.0, width=1.0, height=1.0
+                                    )
+                                    db.session.add(new_box)
+                                added += 1
+                                processed = True
+
+                    # 3. 備用邏輯：若上述皆失敗，則使用其他匹配方式
+                    if not processed:
+                        targets = []
+                        match = re.search(r'upload_(\d+)_(.+)', csv_filename)
+                        if match:
+                            u_id = match.group(1)
+                            fname = match.group(2)
+                            r = Result.query.filter_by(upload_id=u_id, spectrogram_training_filename=fname).first()
+                            if r:
+                                targets.append((r, u_id, fname))
                         else:
-                            match = re.search(r'upload_(\d+)_(.+)', csv_filename)
-                            if match:
-                                u_id = match.group(1)
-                                fname = match.group(2)
-                                r = Result.query.filter_by(upload_id=u_id, spectrogram_training_filename=fname).first()
-                                if r:
-                                    targets.append((r, u_id, fname))
-                            else:
-                                r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
-                                for r in r_all:
-                                    targets.append((r, r.upload_id, csv_filename))
+                            r_all = Result.query.filter_by(spectrogram_training_filename=csv_filename).all()
+                            for r in r_all:
+                                targets.append((r, r.upload_id, csv_filename))
                         
                         for r, u_id, fname in targets:
                             r_idx_match = re.search(r'_spec_training_(\d+)\.', fname)

@@ -101,10 +101,9 @@ to { background-position: 0 0; }
                                 style="padding: 4px 10px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px;">
                                 查看報告
                             </a>
-                            <a href="{{ url_for('main.download_training_results', run_id=run.id) }}"
+                            <a href="javascript:void(0)" onclick="openDownloadModal({{ run.id }})"
                                 class="btn btn-primary"
-                                style="padding: 4px 10px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px;"
-                                download>
+                                style="padding: 4px 10px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px;">
                                 下載模型
                             </a>
                             {% elif run.status == 'FAILURE' %}
@@ -279,7 +278,7 @@ to { background-position: 0 0; }
                     // 使用 JS 動態生成 HTML
                     actionCell.innerHTML = `
                         <a href="/training/report/${data.id}" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.85rem;">查看報告</a>
-                        <a href="/training/download/${data.id}" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.85rem;" download>下載模型</a>
+                        <a href="javascript:void(0)" onclick="openDownloadModal(${data.id})" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.85rem;">下載模型</a>
                     `;
                 } else if (data.status === 'FAILURE') {
                     actionCell.innerHTML = '<span style="color: var(--highlight);">訓練失敗</span>';
@@ -287,5 +286,48 @@ to { background-position: 0 0; }
             }
         }
     });
+
+    // Modal 功能
+    function openDownloadModal(runId) {
+        const modal = document.getElementById('downloadModal');
+        const form = document.getElementById('downloadForm');
+        form.action = '/training/download/' + runId;
+        modal.style.display = 'flex';
+    }
+
+    function closeDownloadModal() {
+        const modal = document.getElementById('downloadModal');
+        modal.style.display = 'none';
+    }
+
+    window.addEventListener('click', function(event) {
+        const modal = document.getElementById('downloadModal');
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    });
 </script>
+
+<!-- 下載選項 Modal -->
+<div id="downloadModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
+    <div style="background-color: #fff; padding: 20px; border-radius: 8px; width: 300px; max-width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <h3 style="margin-top: 0; margin-bottom: 1rem;">選擇下載格式</h3>
+        <form id="downloadForm" method="GET" action="" onsubmit="setTimeout(closeDownloadModal, 100);">
+            <div style="margin-bottom: 10px;">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" name="format" value="pt" checked> PyTorch 模型 (.pt)
+                </label>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" name="format" value="onnx"> ONNX 模型 (.onnx)
+                </label>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeDownloadModal()">取消</button>
+                <button type="submit" class="btn btn-primary">下載</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
