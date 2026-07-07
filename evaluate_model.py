@@ -4,6 +4,8 @@ import os
 import csv
 import argparse
 import sys
+import tempfile
+import shutil
 from collections import defaultdict
 
 # 嘗試載入 PyTorch 相關套件
@@ -170,7 +172,7 @@ if HAS_TORCH:
                 self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
                 self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
             else:
-                self.up = nn.ConvTranspose2d(in_channels // 2, in_channels // 2, kernel_size=2, stride=2)
+                self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
                 self.conv = DoubleConv(in_channels, out_channels)
             self.att = AttentionBlock(F_g=in_channels // 2, F_l=in_channels // 2, F_int=in_channels // 4)
             
@@ -261,6 +263,55 @@ def run_evaluation(model_path, csv_path, images_dir, output_dir, skip_unlabeled=
     print(f"圖片搜尋目錄: {images_dir}")
     print("-" * 60)
 
+    # 處理 Windows 下路徑包含中文導致 ONNX Runtime 讀取失敗的問題
+    original_model_path = model_path
+    if not os.path.abspath(model_path).isascii():
+        print(" [提示] 偵測到模型路徑包含非英文(ASCII)字元。")
+        
+        import platform
+        short_path_success = False
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                from ctypes import wintypes
+                _GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
+                _GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+                _GetShortPathNameW.restype = wintypes.DWORD
+                
+                long_name = os.path.abspath(model_path)
+                buf_size = _GetShortPathNameW(long_name, None, 0)
+                if buf_size > 0:
+                    buf = ctypes.create_unicode_buffer(buf_size)
+                    _GetShortPathNameW(long_name, buf, buf_size)
+                    short_path = buf.value
+                    if short_path.isascii():
+                        model_path = short_path
+                        short_path_success = True
+                        print(f" 已將路徑轉換為全英文短路徑: {model_path}")
+            except Exception as e:
+                pass
+        
+        if not short_path_success:
+            print(" 將建立暫存副本 (包含外部權重資料檔)...")
+            temp_dir = tempfile.gettempdir()
+            basename = os.path.basename(original_model_path)
+            temp_model_path = os.path.join(temp_dir, basename)
+            
+            # 複製主模型檔
+            shutil.copy2(original_model_path, temp_model_path)
+            
+            # 複製外部權重檔 (.data) 與標籤檔 (classes.txt)
+            orig_dir = os.path.dirname(os.path.abspath(original_model_path))
+            for f in os.listdir(orig_dir):
+                if f.endswith('.data') or f == 'classes.txt':
+                    try:
+                        shutil.copy2(os.path.join(orig_dir, f), os.path.join(temp_dir, f))
+                    except:
+                        pass
+            
+            model_path = temp_model_path
+            print(f" 已建立暫存模型: {model_path}")
+
     # 1. 偵測與載入模型
     if not os.path.exists(model_path):
         print(f"錯誤：找不到模型權重檔 {model_path}。")
@@ -285,30 +336,61 @@ def run_evaluation(model_path, csv_path, images_dir, output_dir, skip_unlabeled=
             try:
                 print("嘗試載入為 ONNX 模型...")
                 onnx_session = ort.InferenceSession(model_path)
-                onnx_input_name = onnx_session.get_inputs()[0].name
-                is_onnx = True
+                meta = onnx_session.get_modelmeta()
                 
-                # 嘗試從目錄讀取 classes.txt 來取得類別名稱
-                classes_txt = os.path.join(os.path.dirname(model_path), 'classes.txt')
-                if os.path.exists(classes_txt):
-                    with open(classes_txt, 'r', encoding='utf-8') as f:
-                        lines = [line.strip() for line in f.readlines() if line.strip()]
-                        model_classes = {i: name for i, name in enumerate(lines)}
-                        cnn_classes = lines
-                    print(f" 從 {classes_txt} 載入類別名稱成功！")
-                else:
-                    print(" [警告] 找不到 classes.txt，將使用預設數字作為類別。如果預測標籤是文字，可能無法匹配。")
-                print(" ONNX 模型載入成功！")
-                
-                if HAS_TORCH:
-                    cnn_transforms = transforms.Compose([
-                        transforms.Resize((224, 224)),
-                        transforms.ToTensor(),
-                        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-                    ])
-                else:
-                    print(" [警告] 需要 PyTorch 與 torchvision 來進行影像前處理。")
+                # 判斷是否為 YOLO 匯出的 ONNX 模型
+                is_yolo_onnx = False
+                if meta and meta.custom_metadata_map:
+                    if 'author' in meta.custom_metadata_map and 'ultralytics' in meta.custom_metadata_map['author'].lower():
+                        is_yolo_onnx = True
+                    if 'stride' in meta.custom_metadata_map and 'names' in meta.custom_metadata_map:
+                        is_yolo_onnx = True
+
+                if is_yolo_onnx:
+                    print(" 偵測到此為 YOLOv8 匯出的 ONNX 模型，將自動轉交由 YOLO 引擎進行推論...")
                     is_onnx = False
+                    onnx_session = None
+                else:
+                    onnx_input_name = onnx_session.get_inputs()[0].name
+                    is_onnx = True
+                    
+                    # 嘗試從 ONNX metadata 讀取 names (防呆)
+                    if meta and 'names' in meta.custom_metadata_map:
+                        try:
+                            import ast
+                            names_str = meta.custom_metadata_map['names']
+                            names_dict = ast.literal_eval(names_str)
+                            max_idx = max(names_dict.keys())
+                            cnn_classes = [str(names_dict.get(i, i)) for i in range(max_idx + 1)]
+                            model_classes = {i: name for i, name in enumerate(cnn_classes)}
+                            print(f" 從 ONNX metadata 載入類別名稱成功！")
+                        except Exception:
+                            pass
+
+                    if not cnn_classes:
+                        # 嘗試從目錄讀取 classes.txt 來取得類別名稱
+                        classes_txt = os.path.join(os.path.dirname(model_path), 'classes.txt')
+                        if os.path.exists(classes_txt):
+                            with open(classes_txt, 'r', encoding='utf-8') as f:
+                                lines = [line.strip() for line in f.readlines() if line.strip()]
+                                model_classes = {i: name for i, name in enumerate(lines)}
+                                cnn_classes = lines
+                            print(f" 從 {classes_txt} 載入類別名稱成功！")
+                        else:
+                            print(" [警告] 找不到 classes.txt 且無內建 metadata，將使用預設數字作為類別。")
+                            
+                    print(" ONNX 模型 (CNN) 載入成功！")
+                    
+                    if HAS_TORCH:
+                        cnn_transforms = transforms.Compose([
+                            transforms.Resize((224, 224)),
+                            transforms.ToTensor(),
+                            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                        ])
+                    else:
+                        print(" [警告] 需要 PyTorch 與 torchvision 來進行影像前處理。")
+                        is_onnx = False
+
             except Exception as e:
                 print(f"ONNX 模型載入失敗: {e}")
                 is_onnx = False

@@ -25,11 +25,13 @@
                     <a href="{{ url_for('main.training_status') }}" class="{{ 'active' if request.endpoint == 'main.training_status' }}">模型訓練</a>
                     
                     <div style="margin-left: auto; display: flex; align-items: center; gap: 15px;">
+                        <div id="google_translate_element"></div>
                         <span style="color: rgba(255, 255, 255, 0.9); font-size: 14px; font-weight: 500;">Hi, {{ current_user.username }}</span>
                         <a href="{{ url_for('main.logout') }}" style="color: #ff6f61; font-size: 14px; margin-left: 0; padding: 6px 12px; border: 1px solid #ff6f61; border-radius: 6px; transition: all 0.3s ease;">登出</a>
                     </div>
                 {% else %}
-                    <div style="margin-left: auto;">
+                    <div style="margin-left: auto; display: flex; align-items: center; gap: 15px;">
+                        <div id="google_translate_element"></div>
                         <a href="{{ url_for('main.login') }}" class="{{ 'active' if request.endpoint == 'main.login' }}">登入</a>
                     </div>
                 {% endif %}
@@ -46,5 +48,50 @@
     </footer>
 
     {% block scripts %}{% endblock %}
+
+    <!-- Google 翻譯指令碼 -->
+    <script type="text/javascript">
+        function googleTranslateElementInit() {
+            new google.translate.TranslateElement({
+                pageLanguage: 'zh-TW',
+                includedLanguages: 'en,zh-TW',
+                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false
+            }, 'google_translate_element');
+        }
+    </script>
+    <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+    
+    <style>
+        /* 隱藏 Google 翻譯的頂部工具列 */
+        .goog-te-banner-frame.skiptranslate {
+            display: none !important;
+        }
+        body {
+            top: 0px !important; 
+        }
+        /* 美化翻譯下拉選單 */
+        #google_translate_element select {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+        }
+        #google_translate_element select option {
+            color: #333;
+        }
+        /* 隱藏 Google 翻譯的 Logo */
+        .goog-logo-link {
+            display: none !important;
+        }
+        .goog-te-gadget {
+            color: transparent !important;
+            font-size: 0px;
+        }
+    </style>
 </body>
 </html>

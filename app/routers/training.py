@@ -396,16 +396,51 @@ def download_training_results(run_id):
                 print(f"ONNX 轉換失敗: {e}")
                 traceback.print_exc()
                 
+    # 嘗試產生 classes.txt
+    classes_txt_path = os.path.join(results_dir, 'weights', 'classes.txt')
+    if os.path.exists(best_model_path) and not os.path.exists(classes_txt_path):
+        try:
+            import torch
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            checkpoint = torch.load(best_model_path, map_location=device)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                classes = checkpoint.get('classes', [])
+                if classes:
+                    with open(classes_txt_path, 'w', encoding='utf-8') as f:
+                        for c_name in classes:
+                            f.write(f"{c_name}\n")
+            else:
+                from ultralytics import YOLO
+                tmp_model = YOLO(best_model_path)
+                if hasattr(tmp_model, 'names') and tmp_model.names:
+                    with open(classes_txt_path, 'w', encoding='utf-8') as f:
+                        for i in range(len(tmp_model.names)):
+                            f.write(f"{tmp_model.names[i]}\n")
+        except Exception as e:
+            print(f"無法自動產生 classes.txt: {e}")
+
     memory_file = io.BytesIO()
     try:
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            weights_dir = os.path.join(results_dir, 'weights')
             if 'pt' in req_formats and os.path.exists(best_model_path):
                 zf.write(best_model_path, 'best.pt')
             
             if 'onnx' in req_formats:
-                onnx_model_path = os.path.join(results_dir, 'weights', 'best.onnx')
+                onnx_model_path = os.path.join(weights_dir, 'best.onnx')
                 if os.path.exists(onnx_model_path):
                     zf.write(onnx_model_path, 'best.onnx')
+                    
+                    # 打包相關的 .data 外部權重檔與 classes.txt
+                    if os.path.isdir(weights_dir):
+                        for f in os.listdir(weights_dir):
+                            if f.endswith('.data') or f == 'classes.txt':
+                                filepath = os.path.join(weights_dir, f)
+                                if os.path.isfile(filepath):
+                                    try:
+                                        zf.getinfo(f)
+                                    except KeyError:
+                                        zf.write(filepath, f)
             
             if os.path.exists(confusion_xlsx_path):
                 zf.write(confusion_xlsx_path, 'confusion_matrix_results.xlsx')
